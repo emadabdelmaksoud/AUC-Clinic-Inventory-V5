@@ -24,6 +24,7 @@ const ALL_NAV: NavItem[] = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { label: "Balance", path: "/balance", icon: Scale, key: "reports" },
   { label: "Expiry Alerts", path: "/expiry", icon: BellRing, key: "reports" },
+  { label: "Staff Report", path: "/staff-report", icon: Users, key: "reports" },
   { label: "Print Order", path: "/print-order", icon: ClipboardEdit, key: "inventory" },
   { label: "Products", path: "/products", icon: Box, key: "products" },
   { label: "Inventory", path: "/inventory", icon: Warehouse, key: "inventory" },
