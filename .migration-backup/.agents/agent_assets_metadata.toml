@@ -1,0 +1,14 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "fU_BLZ7H7339TGOjcClgH"
+uri = "file://store-control-source.zip"
+type = "unspecified"
+title = "Store Control — Full Source Code (updated)"
+
+[[outputs]]
+id = "1Bngw10-YAOJMs30JFINb"
+uri = "file://DEPLOYMENT-GUIDE.md"
+type = "text"
+title = "Store Control — Updated Deployment Guide"

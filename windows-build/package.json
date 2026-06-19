@@ -1,0 +1,14 @@
+{
+  "name": "clinic-inventory",
+  "version": "1.0.0",
+  "description": "AUC Clinic Inventory System",
+  "author": {
+    "name": "AUC Clinic"
+  },
+  "main": "main.cjs",
+  "private": true,
+  "devDependencies": {
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8"
+  }
+}
