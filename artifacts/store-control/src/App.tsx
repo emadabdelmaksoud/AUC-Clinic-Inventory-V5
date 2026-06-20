@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import AppLayout from "@/components/AppLayout";
+import AutoBackupRunner from "@/components/AutoBackupRunner";
 import LoginPage from "@/pages/Login";
 import DashboardPage from "@/pages/Dashboard";
 import ProductsPage from "@/pages/Products";
@@ -86,6 +87,7 @@ export default function App() {
         >
           <AppRouter />
         </WouterRouter>
+        <AutoBackupRunner />
         <Toaster richColors position="top-right" />
       </AuthProvider>
     </QueryClientProvider>
