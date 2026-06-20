@@ -16,13 +16,11 @@ export default defineConfig(async () => ({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      injectRegister: "auto",
-      devOptions: {
-        enabled: true,
-        type: "module",
-      },
+      injectRegister: "script",
+      includeAssets: ["icon.png", "icons/icon-192.png", "icons/icon-256.png", "icons/icon-512.png"],
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -45,6 +43,7 @@ export default defineConfig(async () => ({
         ],
       },
       manifest: {
+        id: "/",
         name: "AUC Clinic Inventory",
         short_name: "Clinic Inv.",
         description: "AUC Clinic Inventory System — manage medications and supplies.",
@@ -52,17 +51,13 @@ export default defineConfig(async () => ({
         background_color: "#ffffff",
         display: "standalone",
         orientation: "any",
-        scope: basePath,
-        start_url: basePath,
+        scope: "/",
+        start_url: "/",
         icons: [
-          { src: "icons/icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "icons/icon-256.png", sizes: "256x256", type: "image/png" },
-          {
-            src: "icons/icon-512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "any maskable",
-          },
+          { src: "icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "icons/icon-256.png", sizes: "256x256", type: "image/png", purpose: "any" },
+          { src: "icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
     }),
