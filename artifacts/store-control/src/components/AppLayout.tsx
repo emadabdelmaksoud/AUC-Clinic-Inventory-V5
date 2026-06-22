@@ -195,10 +195,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Grouped nav — no internal borders, smooth scroll */}
-      <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 px-1"
-        style={{ scrollbarWidth: "none" }}
-      >
+      {/* Grouped nav */}
+      <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 px-1 scrollbar-thin scrollbar-thumb-sidebar-border scrollbar-track-transparent">
         {visibleGroups.map((group) => {
           const { originalIndex } = group;
           const GroupIcon = group.icon;
@@ -242,14 +240,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <button
                 onClick={() => toggleGroup(originalIndex)}
                 className={cn(
-                  "w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider transition-colors cursor-pointer select-none",
+                  "w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer select-none",
                   hasActive
-                    ? "text-sidebar-foreground/70"
-                    : "text-sidebar-foreground/35 hover:text-sidebar-foreground/60",
+                    ? "text-sidebar-foreground/80"
+                    : "text-sidebar-foreground/55 hover:text-sidebar-foreground",
                   "hover:bg-sidebar-accent/40"
                 )}
               >
-                <GroupIcon className="w-3 h-3 flex-shrink-0" />
+                <GroupIcon className="w-4 h-4 flex-shrink-0 text-sidebar-foreground/45" />
                 <span className="flex-1 text-left">{group.label}</span>
                 {!open && groupBadge > 0 && <BadgeCount count={groupBadge} />}
                 <ChevronDown
