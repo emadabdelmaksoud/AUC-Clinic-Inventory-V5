@@ -19,9 +19,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  getCustomCategories, saveCustomCategories,
-  getCustomUnits, saveCustomUnits,
+  getAllCategories, saveAllCategories, resetCategories,
+  getAllUnits, saveAllUnits, resetUnits,
 } from "@/lib/custom-lists";
+import { PHARMA_CATEGORIES, PHARMA_UNITS } from "@/lib/pharma-constants";
 
 async function getSetting(key: string): Promise<string | null> {
   const row = await db.settings.get(key);
@@ -45,90 +46,149 @@ function formatLastRun(iso: string | null): string {
   return `${days}d ago`;
 }
 
+function EditableList({
+  title,
+  items,
+  newValue,
+  onNewValueChange,
+  onAdd,
+  onRemove,
+  onReset,
+  defaultCount,
+}: {
+  title: string;
+  items: string[];
+  newValue: string;
+  onNewValueChange: (v: string) => void;
+  onAdd: () => void;
+  onRemove: (item: string) => void;
+  onReset: () => void;
+  defaultCount: number;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">{title}</p>
+        <Button
+          size="sm" variant="ghost" className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+          onClick={onReset} type="button"
+          title={`Reset to ${defaultCount} built-in defaults`}
+        >
+          Reset to defaults
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto rounded border bg-muted/20 p-2">
+        {items.length === 0 ? (
+          <p className="text-xs text-muted-foreground px-1 py-0.5">No items. Add one below or reset to defaults.</p>
+        ) : items.map(item => (
+          <span key={item} className="inline-flex items-center gap-1 text-xs bg-background border rounded px-2 py-0.5 shadow-sm">
+            {item}
+            <button
+              type="button"
+              onClick={() => onRemove(item)}
+              className="text-muted-foreground/50 hover:text-destructive transition-colors ml-0.5"
+              title={`Remove "${item}"`}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={newValue}
+          onChange={e => onNewValueChange(e.target.value)}
+          placeholder={`Add to ${title.toLowerCase()}…`}
+          className="h-8 text-sm"
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); onAdd(); } }}
+        />
+        <Button size="sm" variant="outline" className="h-8 px-3 gap-1 flex-shrink-0" onClick={onAdd} type="button">
+          <Plus className="w-3.5 h-3.5" /> Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ListsManagement() {
   const qc = useQueryClient();
   const [newCategory, setNewCategory] = useState("");
   const [newUnit, setNewUnit] = useState("");
 
-  const { data: customCategories = [] } = useQuery({ queryKey: ["customCategories"], queryFn: getCustomCategories });
-  const { data: customUnits = [] } = useQuery({ queryKey: ["customUnits"], queryFn: getCustomUnits });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["all_categories"] });
+    qc.invalidateQueries({ queryKey: ["all_units"] });
+  };
+
+  const { data: categories = [] } = useQuery({ queryKey: ["all_categories"], queryFn: getAllCategories });
+  const { data: units = [] } = useQuery({ queryKey: ["all_units"], queryFn: getAllUnits });
 
   const { mutate: saveCategories } = useMutation({
-    mutationFn: saveCustomCategories,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["customCategories"] }),
+    mutationFn: saveAllCategories,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["all_categories"] }),
   });
   const { mutate: saveUnits } = useMutation({
-    mutationFn: saveCustomUnits,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["customUnits"] }),
+    mutationFn: saveAllUnits,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["all_units"] }),
   });
 
   function addCategory() {
     const v = newCategory.trim();
     if (!v) return;
-    if (customCategories.includes(v)) { toast.error("Category already exists"); return; }
-    saveCategories([...customCategories, v]);
+    if (categories.includes(v)) { toast.error("Category already exists"); return; }
+    saveCategories([...categories, v].sort());
     setNewCategory("");
   }
-  function removeCategory(c: string) { saveCategories(customCategories.filter(x => x !== c)); }
+  function removeCategory(c: string) { saveCategories(categories.filter(x => x !== c)); }
+  async function handleResetCategories() {
+    await resetCategories();
+    invalidate();
+    toast.success("Categories reset to defaults");
+  }
 
   function addUnit() {
     const v = newUnit.trim();
     if (!v) return;
-    if (customUnits.includes(v)) { toast.error("Unit already exists"); return; }
-    saveUnits([...customUnits, v]);
+    if (units.includes(v)) { toast.error("Unit already exists"); return; }
+    saveUnits([...units, v].sort());
     setNewUnit("");
   }
-  function removeUnit(u: string) { saveUnits(customUnits.filter(x => x !== u)); }
+  function removeUnit(u: string) { saveUnits(units.filter(x => x !== u)); }
+  async function handleResetUnits() {
+    await resetUnits();
+    invalidate();
+    toast.success("Base units reset to defaults");
+  }
 
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2"><List className="w-4 h-4" /> Lists Management</CardTitle>
-        <CardDescription className="text-xs">Add or remove custom entries that appear in the product form. Built-in entries cannot be removed.</CardDescription>
+        <CardDescription className="text-xs">
+          Add or remove any category or base unit — including built-in ones. Changes appear immediately in the product form.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {/* Categories */}
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Custom Categories</p>
-          {customCategories.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No custom categories yet.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {customCategories.map(c => (
-                <span key={c} className="inline-flex items-center gap-1 text-xs bg-muted rounded px-2 py-0.5">
-                  {c}
-                  <button type="button" onClick={() => removeCategory(c)} className="text-muted-foreground/60 hover:text-destructive transition-colors"><X className="w-3 h-3" /></button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2">
-            <Input value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="New category…" className="h-8 text-sm"
-              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCategory(); } }} />
-            <Button size="sm" variant="outline" className="h-8 px-3 gap-1" onClick={addCategory} type="button"><Plus className="w-3.5 h-3.5" /> Add</Button>
-          </div>
-        </div>
-        {/* Units */}
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Custom Base Units</p>
-          {customUnits.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No custom units yet.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {customUnits.map(u => (
-                <span key={u} className="inline-flex items-center gap-1 text-xs bg-muted rounded px-2 py-0.5">
-                  {u}
-                  <button type="button" onClick={() => removeUnit(u)} className="text-muted-foreground/60 hover:text-destructive transition-colors"><X className="w-3 h-3" /></button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2">
-            <Input value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="New unit…" className="h-8 text-sm"
-              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addUnit(); } }} />
-            <Button size="sm" variant="outline" className="h-8 px-3 gap-1" onClick={addUnit} type="button"><Plus className="w-3.5 h-3.5" /> Add</Button>
-          </div>
-        </div>
+        <EditableList
+          title="Categories"
+          items={categories}
+          newValue={newCategory}
+          onNewValueChange={setNewCategory}
+          onAdd={addCategory}
+          onRemove={removeCategory}
+          onReset={handleResetCategories}
+          defaultCount={PHARMA_CATEGORIES.length}
+        />
+        <EditableList
+          title="Base Units"
+          items={units}
+          newValue={newUnit}
+          onNewValueChange={setNewUnit}
+          onAdd={addUnit}
+          onRemove={removeUnit}
+          onReset={handleResetUnits}
+          defaultCount={PHARMA_UNITS.length}
+        />
       </CardContent>
     </Card>
   );

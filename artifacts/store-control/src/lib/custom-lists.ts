@@ -15,30 +15,33 @@ async function setJsonSetting(key: string, value: unknown): Promise<void> {
   await db.settings.put({ key, value: JSON.stringify(value) });
 }
 
-export async function getCustomCategories(): Promise<string[]> {
-  return getJsonSetting<string[]>("customCategories", []);
-}
-
-export async function saveCustomCategories(cats: string[]): Promise<void> {
-  await setJsonSetting("customCategories", cats);
-}
-
-export async function getCustomUnits(): Promise<string[]> {
-  return getJsonSetting<string[]>("customUnits", []);
-}
-
-export async function saveCustomUnits(units: string[]): Promise<void> {
-  await setJsonSetting("customUnits", units);
-}
+const CAT_KEY = "effectiveCategories";
+const UNIT_KEY = "effectiveUnits";
 
 export async function getAllCategories(): Promise<string[]> {
-  const custom = await getCustomCategories();
-  const merged = new Set([...PHARMA_CATEGORIES, ...custom]);
-  return [...merged].sort();
+  const stored = await getJsonSetting<string[] | null>(CAT_KEY, null);
+  if (stored !== null) return stored;
+  return [...PHARMA_CATEGORIES];
+}
+
+export async function saveAllCategories(cats: string[]): Promise<void> {
+  await setJsonSetting(CAT_KEY, cats);
+}
+
+export async function resetCategories(): Promise<void> {
+  await db.settings.delete(CAT_KEY);
 }
 
 export async function getAllUnits(): Promise<string[]> {
-  const custom = await getCustomUnits();
-  const merged = new Set([...PHARMA_UNITS, ...custom]);
-  return [...merged].sort();
+  const stored = await getJsonSetting<string[] | null>(UNIT_KEY, null);
+  if (stored !== null) return stored;
+  return [...PHARMA_UNITS];
+}
+
+export async function saveAllUnits(units: string[]): Promise<void> {
+  await setJsonSetting(UNIT_KEY, units);
+}
+
+export async function resetUnits(): Promise<void> {
+  await db.settings.delete(UNIT_KEY);
 }
