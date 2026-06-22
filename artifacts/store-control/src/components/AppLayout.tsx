@@ -260,26 +260,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </div>
 
-        {/* Settings — at the bottom of nav, above install button */}
-        <div className="mt-2 pt-2 border-t border-sidebar-border/40">
-          <Link
-            href="/settings"
-            onClick={() => setSidebarOpen(false)}
-            data-testid="nav-settings"
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer",
-              isSettingsActive
-                ? "bg-primary text-white"
-                : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            )}
-          >
-            <Settings className="w-4 h-4 flex-shrink-0" />
-            <span>Settings</span>
-          </Link>
-        </div>
       </nav>
 
-      <div className="border-t border-sidebar-border/40 mx-2" />
+      {/* Settings — above the separator line, below nav groups */}
+      <div className="px-2 pt-1">
+        <Link
+          href="/settings"
+          onClick={() => setSidebarOpen(false)}
+          data-testid="nav-settings"
+          className={cn(
+            "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer",
+            isSettingsActive
+              ? "bg-primary text-white"
+              : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          )}
+        >
+          <Settings className="w-4 h-4 flex-shrink-0" />
+          <span>Settings</span>
+        </Link>
+      </div>
+
+      <div className="border-t border-sidebar-border/40 mx-2 mt-1" />
 
       <PWAInstallButton />
 
