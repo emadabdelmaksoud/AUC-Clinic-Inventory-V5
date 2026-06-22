@@ -62,35 +62,28 @@ export default function DashboardPage() {
   const { data: nearBatches = [] } = useQuery({ queryKey: ["alerts_near", 90], queryFn: () => listNearExpiryBatches(90) });
   const { data: lowStock = [] } = useQuery({ queryKey: ["alerts_low"], queryFn: listLowStockProducts });
 
-  const { data: recentTxns = [] } = useQuery({
-    queryKey: ["recent_txns"],
-    queryFn: async () => {
-      const txns = await listTransactions({ limit: 10 });
-      const [products, warehouses] = await Promise.all([db.products.toArray(), db.warehouses.toArray()]);
-      const pm = new Map(products.map(p => [p.id, p]));
-      const wm = new Map(warehouses.map(w => [w.id, w]));
-      return txns.map(t => ({
-        ...t,
-        productName: pm.get(t.productId)?.productName ?? "Unknown",
-        warehouseName: wm.get(t.warehouseId)?.warehouseName ?? "Unknown",
-      }));
-    },
-  });
-
   const { data: productMap } = useQuery({
-    queryKey: ["products_map"],
+    queryKey: ["products"],
     queryFn: async () => {
       const products = await db.products.toArray();
       return new Map(products.map(p => [p.id, p]));
     },
+    staleTime: 1000 * 60,
   });
 
   const { data: warehouseMap } = useQuery({
-    queryKey: ["warehouses_map"],
+    queryKey: ["warehouses"],
     queryFn: async () => {
       const warehouses = await db.warehouses.toArray();
       return new Map(warehouses.map(w => [w.id, w]));
     },
+    staleTime: 1000 * 60,
+  });
+
+  const { data: recentTxns = [] } = useQuery({
+    queryKey: ["recent_txns"],
+    queryFn: () => listTransactions({ limit: 10 }),
+    staleTime: 1000 * 30,
   });
 
   return (
@@ -224,9 +217,9 @@ export default function DashboardPage() {
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${txnTypeColor[t.transactionType] ?? "bg-gray-100 text-gray-700"}`}>
                     {TRANSACTION_LABELS[t.transactionType]}
                   </span>
-                  <span className="text-sm font-medium truncate">{t.productName}</span>
+                  <span className="text-sm font-medium truncate">{productMap?.get(t.productId)?.productName ?? "Unknown"}</span>
                   <span className="text-xs text-muted-foreground flex-shrink-0">
-                    {t.warehouseName}
+                    {warehouseMap?.get(t.warehouseId)?.warehouseName ?? "Unknown"}
                   </span>
                   <span className="text-xs text-muted-foreground flex-shrink-0 ml-auto whitespace-nowrap">
                     {format(new Date(t.createdAt), "MMM d, HH:mm")}

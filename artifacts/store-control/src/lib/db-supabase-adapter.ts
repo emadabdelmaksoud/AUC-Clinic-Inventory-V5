@@ -100,7 +100,11 @@ export class SupabaseCollection<T> {
   }
 
   async count(): Promise<number> {
-    return (await this.resolve()).length;
+    const { count, error } = await this._table._client
+      .from(this._table._tableName)
+      .select("*", { count: "exact", head: true });
+    if (error) throw new Error(`Supabase count error on ${this._table._tableName}: ${error.message}`);
+    return count ?? 0;
   }
 
   async first(): Promise<T | undefined> {

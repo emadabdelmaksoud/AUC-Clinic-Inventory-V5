@@ -3,6 +3,7 @@ import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { isAdmin } from "@/lib/permissions";
 import AppLayout from "@/components/AppLayout";
 import AutoBackupRunner from "@/components/AutoBackupRunner";
 import LoginPage from "@/pages/Login";
@@ -28,6 +29,12 @@ import PurchaseRequestPage from "@/pages/PurchaseRequest";
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 30, retry: 1 } },
 });
+
+function AdminOnly({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!isAdmin(user?.role)) return <Redirect to="/" />;
+  return <>{children}</>;
+}
 
 function AppRouter() {
   const { user, loading } = useAuth();
@@ -62,15 +69,29 @@ function AppRouter() {
         <Route path="/products/:id" component={ProductDetailPage} />
         <Route path="/products" component={ProductsPage} />
         <Route path="/inventory" component={InventoryPage} />
-        <Route path="/warehouses/:id" component={WarehouseDetailPage} />
-        <Route path="/warehouses" component={WarehousesPage} />
+        <Route path="/warehouses/:id">
+          <AdminOnly><WarehouseDetailPage /></AdminOnly>
+        </Route>
+        <Route path="/warehouses">
+          <AdminOnly><WarehousesPage /></AdminOnly>
+        </Route>
         <Route path="/reports" component={ReportsPage} />
-        <Route path="/users" component={UsersPage} />
+        <Route path="/users">
+          <AdminOnly><UsersPage /></AdminOnly>
+        </Route>
         <Route path="/barcodes" component={BarcodesPage} />
-        <Route path="/import-export" component={ImportExportPage} />
-        <Route path="/audit-logs" component={AuditLogsPage} />
-        <Route path="/backups" component={BackupsPage} />
-        <Route path="/settings" component={SettingsPage} />
+        <Route path="/import-export">
+          <AdminOnly><ImportExportPage /></AdminOnly>
+        </Route>
+        <Route path="/audit-logs">
+          <AdminOnly><AuditLogsPage /></AdminOnly>
+        </Route>
+        <Route path="/backups">
+          <AdminOnly><BackupsPage /></AdminOnly>
+        </Route>
+        <Route path="/settings">
+          <AdminOnly><SettingsPage /></AdminOnly>
+        </Route>
         <Route><Redirect to="/" /></Route>
       </Switch>
     </AppLayout>

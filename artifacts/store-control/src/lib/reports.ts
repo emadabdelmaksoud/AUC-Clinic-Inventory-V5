@@ -18,14 +18,15 @@ export interface OverviewKpis {
 }
 
 export async function getOverviewKpis(): Promise<OverviewKpis> {
-  const [products, batches, warehouses] = await Promise.all([
+  const [products, allBatches, warehouses] = await Promise.all([
     db.products.count(),
-    db.inventoryBatches.filter(b => b.quantityBaseUnit > 0).count(),
-    db.warehouses.filter(w => w.isActive).count(),
+    db.inventoryBatches.toArray(),
+    db.warehouses.toArray(),
   ]);
-  const allBatches = await db.inventoryBatches.toArray();
+  const activeBatches = allBatches.filter(b => b.quantityBaseUnit > 0).length;
   const totalStockBaseUnits = allBatches.reduce((sum, b) => sum + b.quantityBaseUnit, 0);
-  return { totalProducts: products, totalBatches: batches, totalWarehouses: warehouses, totalStockBaseUnits };
+  const totalWarehouses = warehouses.filter(w => w.isActive).length;
+  return { totalProducts: products, totalBatches: activeBatches, totalWarehouses, totalStockBaseUnits };
 }
 
 export interface TxnRow {
