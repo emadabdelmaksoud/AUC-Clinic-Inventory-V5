@@ -46,12 +46,14 @@ interface NavGroup {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   items: NavItem[];
+  directLink?: boolean;
 }
 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "Dashboard",
     icon: LayoutDashboard,
+    directLink: true,
     items: [
       { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     ],
@@ -62,7 +64,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Products",   path: "/products",   icon: Box,       key: "products" },
       { label: "Inventory",  path: "/inventory",  icon: Warehouse,  key: "inventory" },
-      { label: "Warehouses", path: "/warehouses", icon: Building2,  key: "inventory" },
+      { label: "Warehouses", path: "/warehouses", icon: Building2,  key: "warehouses" },
       { label: "Barcodes",   path: "/barcodes",   icon: QrCode,     key: "barcodes" },
     ],
   },
@@ -79,8 +81,8 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Reports",
     icon: BarChart3,
     items: [
-      { label: "Reports",      path: "/reports",      icon: BarChart3,    key: "reports" },
-      { label: "Staff Report", path: "/staff-report", icon: UserSquare2,  key: "reports" },
+      { label: "Reports",      path: "/reports",      icon: BarChart3,     key: "reports" },
+      { label: "Staff Report", path: "/staff-report", icon: UserSquare2,   key: "reports" },
       { label: "Audit Logs",   path: "/audit-logs",   icon: ClipboardList, key: "auditLogs" },
     ],
   },
@@ -113,9 +115,7 @@ function BadgeCount({ count, onActive }: { count: number; onActive?: boolean }) 
   return (
     <span className={cn(
       "flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center leading-none",
-      onActive
-        ? "bg-white/25 text-white"
-        : "bg-destructive text-white"
+      onActive ? "bg-white/25 text-white" : "bg-destructive text-white"
     )}>
       {count > 99 ? "99+" : count}
     </span>
@@ -159,15 +159,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const activeGroupIndex = useMemo(() => getActiveGroupIndex(location), [location]);
 
-  const [openGroups, setOpenGroups] = useState<Record<number, boolean>>(() =>
-    Object.fromEntries(NAV_GROUPS.map((_, i) => [i, i === activeGroupIndex]))
+  // All groups collapsed by default; open state is explicit only
+  const [openGroups, setOpenGroups] = useState<Record<number, boolean>>(
+    () => Object.fromEntries(NAV_GROUPS.map((_, i) => [i, false]))
   );
 
   const toggleGroup = (index: number) =>
     setOpenGroups(prev => ({ ...prev, [index]: !prev[index] }));
 
-  const isGroupOpen = (index: number) =>
-    openGroups[index] ?? index === activeGroupIndex;
+  // A group is open only if explicitly toggled open, OR it's the active group AND hasn't been explicitly closed
+  const isGroupOpen = (index: number) => {
+    const explicit = openGroups[index];
+    if (explicit === true) return true;
+    if (explicit === false) return false;
+    return index === activeGroupIndex;
+  };
 
   const filterItems = (items: NavItem[]) =>
     items.filter(item => !item.key || sections[item.key as keyof typeof sections]);
@@ -189,30 +195,59 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Grouped nav */}
-      <nav className="flex-1 overflow-y-auto py-2 scrollbar-thin">
+      {/* Grouped nav — no internal borders, smooth scroll */}
+      <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 px-1"
+        style={{ scrollbarWidth: "none" }}
+      >
         {visibleGroups.map((group) => {
           const { originalIndex } = group;
-          const open = isGroupOpen(originalIndex);
           const GroupIcon = group.icon;
+
+          /* ── Direct-link groups (Dashboard) ── */
+          if (group.directLink) {
+            const item = group.items[0];
+            const active = isActive(item.path);
+            return (
+              <Link
+                key={item.path}
+                href={item.path}
+                onClick={() => setSidebarOpen(false)}
+                data-testid="nav-dashboard"
+                className={cn(
+                  "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer group",
+                  active
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                )}
+              >
+                <GroupIcon className={cn(
+                  "w-4 h-4 flex-shrink-0",
+                  active ? "text-white" : "text-sidebar-foreground/45 group-hover:text-sidebar-foreground/80"
+                )} />
+                <span className="flex-1 truncate">{group.label}</span>
+              </Link>
+            );
+          }
+
+          /* ── Collapsible groups ── */
+          const open = isGroupOpen(originalIndex);
           const hasActive = group.items.some(item => isActive(item.path));
           const groupBadge = group.items.reduce(
             (sum, item) => sum + (item.badgeKey ? (badges[item.badgeKey] ?? 0) : 0), 0
           );
 
           return (
-            <div key={group.label} className="mb-1">
-              {/* Section header / toggle */}
+            <div key={group.label}>
+              {/* Section toggle */}
               <button
                 onClick={() => toggleGroup(originalIndex)}
                 className={cn(
-                  "w-full flex items-center gap-2 mx-1 px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider transition-colors cursor-pointer select-none",
+                  "w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider transition-colors cursor-pointer select-none",
                   hasActive
                     ? "text-sidebar-foreground/70"
                     : "text-sidebar-foreground/35 hover:text-sidebar-foreground/60",
                   "hover:bg-sidebar-accent/40"
                 )}
-                style={{ width: "calc(100% - 8px)" }}
               >
                 <GroupIcon className="w-3 h-3 flex-shrink-0" />
                 <span className="flex-1 text-left">{group.label}</span>
@@ -227,7 +262,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
               {/* Items */}
               {open && (
-                <div className="mt-0.5 space-y-0.5 px-1">
+                <div className="mt-0.5 mb-1 space-y-0.5">
                   {group.items.map((item) => {
                     const Icon = item.icon;
                     const active = isActive(item.path);
@@ -331,9 +366,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
             <span className="font-semibold text-sm">Clinic Inventory</span>
           </div>
-          {expiryAlertCount > 0 && (
-            <BadgeCount count={expiryAlertCount} />
-          )}
+          {expiryAlertCount > 0 && <BadgeCount count={expiryAlertCount} />}
         </div>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">

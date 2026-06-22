@@ -63,6 +63,7 @@ export function visibleSections(role: AppRole | null | undefined) {
   return {
     products: can(role, "products", "view"),
     inventory: can(role, "inventory", "view"),
+    warehouses: isAdmin(role),
     reports: can(role, "reports", "view"),
     importExport: can(role, "import_export", "view"),
     barcodes: can(role, "barcodes", "view"),
