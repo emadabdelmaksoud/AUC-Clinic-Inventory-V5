@@ -247,7 +247,7 @@ export default function UsersPage() {
                                 <Key className="w-3 h-3" /> Reset Password
                               </Button>
                             )}
-                            {u.id !== currentUser?.id && (
+                            {u.id !== currentUser?.id && isSuperAdmin(currentUser?.role) && (
                               <Button
                                 size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
                                 title="Delete user"
