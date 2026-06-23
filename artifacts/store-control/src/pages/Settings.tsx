@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Settings, Moon, Sun, Download, Smartphone, CheckCircle2,
   Cloud, HardDrive, Clock, Trash2, Loader2, Plus, X, List,
+  Shield, History, RotateCcw, Save,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,6 +24,11 @@ import {
   getAllUnits, saveAllUnits, resetUnits,
 } from "@/lib/custom-lists";
 import { PHARMA_CATEGORIES, PHARMA_UNITS } from "@/lib/pharma-constants";
+import {
+  saveRestorePoint, listRestorePoints, deleteRestorePoint, restoreFromPoint,
+  type RestorePointMeta,
+} from "@/lib/restore-points";
+import { getAutoLogoutMinutes, setAutoLogoutMinutes } from "@/hooks/use-inactivity-logout";
 
 async function getSetting(key: string): Promise<string | null> {
   const row = await db.settings.get(key);
@@ -189,6 +195,174 @@ function ListsManagement() {
           onReset={handleResetUnits}
           defaultCount={PHARMA_UNITS.length}
         />
+      </CardContent>
+    </Card>
+  );
+}
+
+function SecurityCard() {
+  const [value, setValue] = useState<string>(() => {
+    const v = localStorage.getItem("autoLogoutMinutes");
+    return v ?? "off";
+  });
+
+  function handleChange(val: string) {
+    setValue(val);
+    setAutoLogoutMinutes(val === "off" ? "off" : parseInt(val, 10));
+    toast.success(val === "off" ? "Auto-logout disabled" : `Auto-logout set to ${val} minutes`);
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Shield className="w-4 h-4" /> Security
+        </CardTitle>
+        <CardDescription>
+          Automatically sign out after a period of inactivity to protect your account.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Auto-logout after inactivity</p>
+            <p className="text-xs text-muted-foreground">
+              {value === "off" ? "Disabled — session stays active until manually signed out." : `Signs out after ${value} minutes of no activity.`}
+            </p>
+          </div>
+          <Select value={value} onValueChange={handleChange}>
+            <SelectTrigger className="w-36 flex-shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">Off</SelectItem>
+              <SelectItem value="5">5 minutes</SelectItem>
+              <SelectItem value="15">15 minutes</SelectItem>
+              <SelectItem value="30">30 minutes</SelectItem>
+              <SelectItem value="60">1 hour</SelectItem>
+              <SelectItem value="120">2 hours</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RestorePointsCard() {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
+
+  const { data: points = [], isLoading } = useQuery<RestorePointMeta[]>({
+    queryKey: ["restorePoints"],
+    queryFn: listRestorePoints,
+  });
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await saveRestorePoint(name || `Snapshot ${new Date().toLocaleString()}`);
+      setName("");
+      toast.success("Restore point saved");
+      qc.invalidateQueries({ queryKey: ["restorePoints"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+    setSaving(false);
+  }
+
+  async function handleRestore(id: string, pointName: string) {
+    if (!confirm(`Restore to "${pointName}"? All current data will be replaced. This cannot be undone.`)) return;
+    setRestoring(id);
+    try {
+      await restoreFromPoint(id);
+      toast.success(`Restored to "${pointName}". Refreshing…`);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+    setRestoring(null);
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await deleteRestorePoint(id);
+      toast.success("Restore point deleted");
+      qc.invalidateQueries({ queryKey: ["restorePoints"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  function formatBytes(b: number) {
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <History className="w-4 h-4" /> Restore Points
+        </CardTitle>
+        <CardDescription>
+          Save a named snapshot of all your data that you can restore later. Stored locally on this device.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex gap-2">
+          <Input
+            placeholder="Snapshot name (optional)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="flex-1"
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+          />
+          <Button onClick={handleSave} disabled={saving} className="gap-1.5 flex-shrink-0">
+            <Save className="w-3.5 h-3.5" />
+            {saving ? "Saving…" : "Save Now"}
+          </Button>
+        </div>
+
+        {isLoading ? (
+          <div className="h-12 bg-muted animate-pulse rounded" />
+        ) : points.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">No restore points saved yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {points.map((rp) => (
+              <div key={rp.id} className="flex items-center gap-2 p-3 border rounded-lg bg-muted/20">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{rp.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(rp.createdAt).toLocaleString()} · {formatBytes(rp.sizeBytes)}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1 flex-shrink-0"
+                  onClick={() => handleRestore(rp.id, rp.name)}
+                  disabled={restoring === rp.id}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  {restoring === rp.id ? "Restoring…" : "Restore"}
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-destructive hover:bg-destructive/10 flex-shrink-0"
+                  onClick={() => handleDelete(rp.id)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -583,8 +757,14 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Lists Management — admin only */}
-      {user?.role === "admin" && <ListsManagement />}
+      {/* Lists Management — admin/administrator only */}
+      {(user?.role === "admin" || user?.role === "administrator") && <ListsManagement />}
+
+      {/* Security — auto-logout */}
+      <SecurityCard />
+
+      {/* Restore Points — admin/administrator only */}
+      {(user?.role === "admin" || user?.role === "administrator") && <RestorePointsCard />}
 
       {/* About */}
       <Card>

@@ -7,7 +7,7 @@ export interface User {
   username: string;
   fullName: string;
   passwordHash: string;
-  role: "admin" | "staff";
+  role: "administrator" | "admin" | "staff";
   createdAt: string;
   updatedAt: string;
 }
