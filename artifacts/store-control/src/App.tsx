@@ -1,4 +1,5 @@
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { useInactivityLogout } from "@/hooks/use-inactivity-logout";
 import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
@@ -31,7 +32,8 @@ const queryClient = new QueryClient({
 });
 
 function AppRouter() {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
+  useInactivityLogout(signOut);
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="text-center space-y-2">
