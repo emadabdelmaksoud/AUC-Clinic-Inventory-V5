@@ -1,4 +1,4 @@
-export type AppRole = "admin" | "staff";
+export type AppRole = "administrator" | "admin" | "staff";
 
 export type Resource =
   | "products"
@@ -18,18 +18,34 @@ export type Action = "view" | "create" | "edit" | "delete" | "manage";
 
 type Matrix = Record<AppRole, Partial<Record<Resource, Action[]>>>;
 
+const ALL: Action[] = ["view", "create", "edit", "delete", "manage"];
+
 const MATRIX: Matrix = {
+  administrator: {
+    products: ALL,
+    inventory: ALL,
+    dispensing: ALL,
+    transfers: ALL,
+    disposal: ALL,
+    reports: ALL,
+    import_export: ALL,
+    barcodes: ALL,
+    users: ALL,
+    settings: ALL,
+    audit_logs: ["view", "manage"],
+    backups: ["view", "create", "manage"],
+  },
   admin: {
-    products: ["view", "create", "edit", "delete", "manage"],
-    inventory: ["view", "create", "edit", "delete", "manage"],
-    dispensing: ["view", "create", "edit", "delete", "manage"],
-    transfers: ["view", "create", "edit", "delete", "manage"],
-    disposal: ["view", "create", "edit", "delete", "manage"],
-    reports: ["view", "create", "edit", "delete", "manage"],
-    import_export: ["view", "create", "edit", "delete", "manage"],
-    barcodes: ["view", "create", "edit", "delete", "manage"],
+    products: ALL,
+    inventory: ALL,
+    dispensing: ALL,
+    transfers: ALL,
+    disposal: ALL,
+    reports: ALL,
+    import_export: ALL,
+    barcodes: ALL,
     users: ["view", "create", "edit", "delete", "manage"],
-    settings: ["view", "create", "edit", "delete", "manage"],
+    settings: ALL,
     audit_logs: ["view", "manage"],
     backups: ["view", "create", "manage"],
   },
@@ -56,7 +72,21 @@ export function can(role: AppRole | null | undefined, resource: Resource, action
 }
 
 export function isAdmin(role: AppRole | null | undefined): boolean {
-  return role === "admin";
+  return role === "admin" || role === "administrator";
+}
+
+export function isSuperAdmin(role: AppRole | null | undefined): boolean {
+  return role === "administrator";
+}
+
+export function canManageUser(
+  actorRole: AppRole | null | undefined,
+  targetRole: AppRole | null | undefined,
+): boolean {
+  if (!actorRole) return false;
+  if (actorRole === "administrator") return true;
+  if (actorRole === "admin" && targetRole !== "administrator") return true;
+  return false;
 }
 
 export function visibleSections(role: AppRole | null | undefined) {
