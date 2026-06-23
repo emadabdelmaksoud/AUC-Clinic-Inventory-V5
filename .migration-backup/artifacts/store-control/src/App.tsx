@@ -1,10 +1,12 @@
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { useInactivityLogout } from "@/hooks/use-inactivity-logout";
 import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import AppLayout from "@/components/AppLayout";
 import AutoBackupRunner from "@/components/AutoBackupRunner";
+import PWAUpdateBanner from "@/components/PWAUpdateBanner";
 import LoginPage from "@/pages/Login";
 import DashboardPage from "@/pages/Dashboard";
 import ProductsPage from "@/pages/Products";
@@ -30,7 +32,8 @@ const queryClient = new QueryClient({
 });
 
 function AppRouter() {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
+  useInactivityLogout(signOut);
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="text-center space-y-2">
@@ -88,6 +91,7 @@ export default function App() {
           <AppRouter />
         </WouterRouter>
         <AutoBackupRunner />
+        <PWAUpdateBanner />
         <Toaster richColors position="top-right" />
       </AuthProvider>
     </QueryClientProvider>

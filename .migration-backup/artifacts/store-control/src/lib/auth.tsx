@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { db, type User } from "./db";
-import { generateId, now } from "./db";
+import { db, type User, generateId, now } from "./db";
 
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -91,10 +90,15 @@ async function ensureDefaultAdmin() {
       username: "admin",
       fullName: "Administrator",
       passwordHash: hash,
-      role: "admin",
+      role: "administrator",
       createdAt: now(),
       updatedAt: now(),
     });
+  } else {
+    const existing = await db.users.where("username").equals("admin").first();
+    if (existing && existing.role === "admin") {
+      await db.users.update(existing.id, { role: "administrator", updatedAt: now() });
+    }
   }
 }
 
@@ -102,7 +106,7 @@ export async function createUser(input: {
   username: string;
   fullName: string;
   password: string;
-  role: "admin" | "staff";
+  role: "administrator" | "admin" | "staff";
 }) {
   const existing = await db.users.where("username").equals(input.username.toLowerCase().trim()).first();
   if (existing) throw new Error("Username already taken");
@@ -121,6 +125,10 @@ export async function createUser(input: {
 }
 
 export async function updateUserPassword(userId: string, newPassword: string) {
+  const target = await db.users.get(userId);
+  if (target?.role === "administrator") {
+    throw new Error("Administrator credentials can only be changed by the Administrator themselves.");
+  }
   const hash = await hashPassword(newPassword);
   await db.users.update(userId, { passwordHash: hash, updatedAt: now() });
 }
@@ -131,5 +139,9 @@ export async function listUsers(): Promise<Omit<User, "passwordHash">[]> {
 }
 
 export async function deleteUser(id: string) {
+  const target = await db.users.get(id);
+  if (target?.role === "administrator") {
+    throw new Error("Administrator accounts cannot be deleted.");
+  }
   await db.users.delete(id);
 }
