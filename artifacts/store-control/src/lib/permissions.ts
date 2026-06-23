@@ -46,7 +46,7 @@ const MATRIX: Matrix = {
   admin: {
     products: ALL,
     inventory: ALL,
-    warehouses: [],
+    warehouses: ["view"],
     dispensing: ALL,
     transfers: ALL,
     disposal: ALL,

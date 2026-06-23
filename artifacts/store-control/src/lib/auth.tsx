@@ -82,7 +82,37 @@ export function useAuth() {
   return ctx;
 }
 
+const ROLE_PRIORITY: Record<string, number> = {
+  administrator: 3,
+  admin: 2,
+  staff: 1,
+};
+
+async function deduplicateUsernames() {
+  const all = await db.users.toArray();
+  const byUsername = new Map<string, typeof all>();
+  for (const u of all) {
+    const key = u.username.toLowerCase();
+    if (!byUsername.has(key)) byUsername.set(key, []);
+    byUsername.get(key)!.push(u);
+  }
+  for (const [, group] of byUsername) {
+    if (group.length <= 1) continue;
+    group.sort((a, b) => {
+      const pa = ROLE_PRIORITY[a.role] ?? 0;
+      const pb = ROLE_PRIORITY[b.role] ?? 0;
+      if (pb !== pa) return pb - pa;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+    const toDelete = group.slice(1);
+    for (const u of toDelete) {
+      await db.users.delete(u.id);
+    }
+  }
+}
+
 async function ensureDefaultAdmin() {
+  await deduplicateUsernames();
   const count = await db.users.count();
   if (count === 0) {
     const hash = await hashPassword("admin123");
