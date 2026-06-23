@@ -7,6 +7,7 @@ import { usePWAInstall } from "@/hooks/use-pwa-install";
 import { deduplicateProducts } from "@/lib/products";
 import { deduplicateWarehouses } from "@/lib/warehouses";
 import { useAuth } from "@/lib/auth";
+import { isSuperAdmin, isAdmin } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -371,6 +372,9 @@ function RestorePointsCard() {
 export default function SettingsPage() {
   const qc = useQueryClient();
   const { user } = useAuth();
+  const role = user?.role;
+  const isSuperAdm = isSuperAdmin(role);
+  const isAdminOrAbove = isAdmin(role);
   const { canInstall, isInstalled, promptInstall } = usePWAInstall();
 
   const [darkMode, setDarkMode] = useState(document.documentElement.classList.contains("dark"));
@@ -498,10 +502,10 @@ export default function SettingsPage() {
   async function handleSave() {
     setSaving(true);
     try {
-      await Promise.all([
-        setSetting("orgName", orgName),
-        setSetting("nearExpiryDays", nearExpiryDays),
-      ]);
+      const ops: Promise<void>[] = [];
+      if (isSuperAdm) ops.push(setSetting("orgName", orgName));
+      if (isAdminOrAbove) ops.push(setSetting("nearExpiryDays", nearExpiryDays));
+      await Promise.all(ops);
       toast.success("Settings saved");
       qc.invalidateQueries({ queryKey: ["settings"] });
     } catch (e) {
@@ -519,38 +523,42 @@ export default function SettingsPage() {
         <p className="text-sm text-muted-foreground">Configure your Clinic Inventory app</p>
       </div>
 
-      {/* General */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">General</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Organization / Clinic Name</Label>
-            <Input
-              value={orgName}
-              onChange={(e) => setOrgName(e.target.value)}
-              placeholder="e.g. Main Clinic"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Near-Expiry Warning Days</Label>
-            <Input
-              type="number"
-              min="1"
-              max="365"
-              value={nearExpiryDays}
-              onChange={(e) => setNearExpiryDays(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Products expiring within this many days are flagged as "Near Expiry".
-            </p>
-          </div>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "Save Settings"}
-          </Button>
-        </CardContent>
-      </Card>
+      {/* General — admin and above only */}
+      {isAdminOrAbove && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">General</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isSuperAdm && (
+              <div className="space-y-1.5">
+                <Label>Organization / Clinic Name</Label>
+                <Input
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  placeholder="e.g. Main Clinic"
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>Near-Expiry Warning Days</Label>
+              <Input
+                type="number"
+                min="1"
+                max="365"
+                value={nearExpiryDays}
+                onChange={(e) => setNearExpiryDays(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Products expiring within this many days are flagged as "Near Expiry".
+              </p>
+            </div>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "Save Settings"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Appearance */}
       <Card>
@@ -605,8 +613,8 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Auto Backup */}
-      <Card>
+      {/* Auto Backup — administrator only */}
+      {isSuperAdm && <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
             <Clock className="w-4 h-4" /> Auto Backup
@@ -697,10 +705,10 @@ export default function SettingsPage() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
-      {/* Data Quality */}
-      <Card>
+      {/* Data Quality — admin and above only */}
+      {isAdminOrAbove && <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
             <Trash2 className="w-4 h-4" /> Data Quality
@@ -755,16 +763,16 @@ export default function SettingsPage() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
-      {/* Lists Management — admin/administrator only */}
-      {(user?.role === "admin" || user?.role === "administrator") && <ListsManagement />}
+      {/* Lists Management — administrator only */}
+      {isSuperAdm && <ListsManagement />}
 
       {/* Security — auto-logout */}
       <SecurityCard />
 
-      {/* Restore Points — admin/administrator only */}
-      {(user?.role === "admin" || user?.role === "administrator") && <RestorePointsCard />}
+      {/* Restore Points — administrator only */}
+      {isSuperAdm && <RestorePointsCard />}
 
       {/* About */}
       <Card>

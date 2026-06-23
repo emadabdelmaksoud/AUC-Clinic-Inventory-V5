@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { db, type User, generateId, now } from "./db";
+import type { AppRole } from "./permissions";
 
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -124,7 +125,14 @@ export async function createUser(input: {
   return user;
 }
 
-export async function updateUserPassword(userId: string, newPassword: string) {
+export async function updateUserPassword(
+  userId: string,
+  newPassword: string,
+  actorRole?: AppRole,
+) {
+  if (actorRole !== undefined && actorRole !== "administrator") {
+    throw new Error("Access denied: Only administrators can reset other users' passwords.");
+  }
   const target = await db.users.get(userId);
   if (target?.role === "administrator") {
     throw new Error("Administrator credentials can only be changed by the Administrator themselves.");

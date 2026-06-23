@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listUsers, createUser, deleteUser, updateUserPassword } from "@/lib/auth";
 import { useAuth } from "@/lib/auth";
-import { can, canManageUser, isSuperAdmin } from "@/lib/permissions";
+import { can, canManageUser, canResetPassword, isSuperAdmin } from "@/lib/permissions";
 import type { AppRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,7 +116,7 @@ function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole
   );
 }
 
-function ResetPasswordForm({ userId, userName, onClose }: { userId: string; userName: string; onClose: () => void }) {
+function ResetPasswordForm({ userId, userName, actorRole, onClose }: { userId: string; userName: string; actorRole: AppRole; onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -128,7 +128,7 @@ function ResetPasswordForm({ userId, userName, onClose }: { userId: string; user
     if (password !== confirm) { toast.error("Passwords do not match"); return; }
     setSaving(true);
     try {
-      await updateUserPassword(userId, password);
+      await updateUserPassword(userId, password, actorRole);
       toast.success(`Password reset for ${userName}`);
       onClose();
     } catch (err) {
@@ -239,7 +239,7 @@ export default function UsersPage() {
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5 justify-end">
-                            {u.id !== currentUser?.id && (
+                            {u.id !== currentUser?.id && canResetPassword(currentUser?.role) && (
                               <Button
                                 size="sm" variant="outline" className="h-7 text-xs gap-1.5"
                                 onClick={() => setResetPwUser({ id: u.id, name: u.fullName || u.username, role: u.role as AppRole })}
@@ -287,7 +287,7 @@ export default function UsersPage() {
           {resetPwUser && resetPwUser.role === "administrator" && !isSuperAdmin(currentUser?.role) ? (
             <AccessDeniedNote />
           ) : resetPwUser ? (
-            <ResetPasswordForm userId={resetPwUser.id} userName={resetPwUser.name} onClose={() => setResetPwUser(null)} />
+            <ResetPasswordForm userId={resetPwUser.id} userName={resetPwUser.name} actorRole={currentUser?.role as AppRole} onClose={() => setResetPwUser(null)} />
           ) : null}
         </DialogContent>
       </Dialog>
