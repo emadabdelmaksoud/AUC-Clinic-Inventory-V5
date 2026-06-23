@@ -151,15 +151,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [activeGroupId]);
 
   const toggleGroup = (id: string) => {
-    setOpenGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
+    setOpenGroups(prev =>
+      prev.has(id) ? new Set<string>() : new Set<string>([id])
+    );
   };
 
   const isDashboardActive = location === "/" || location === "/dashboard";
@@ -196,7 +190,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <span>Dashboard</span>
         </Link>
 
-        {/* Collapsible groups */}
+        {/* Collapsible groups — all including administration */}
         <div className="space-y-0.5">
           {GROUPS.map(group => {
             const isOpen = openGroups.has(group.id);
@@ -205,7 +199,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
             return (
               <div key={group.id}>
-                {/* Group header */}
                 <button
                   onClick={() => toggleGroup(group.id)}
                   className={cn(
@@ -225,7 +218,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   />
                 </button>
 
-                {/* Group items */}
                 {isOpen && (
                   <div className="ml-3 pl-3 border-l border-sidebar-border/50 mt-0.5 mb-0.5 space-y-0.5">
                     {group.items.map(item => {
@@ -262,24 +254,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </div>
 
-        {/* Settings — standalone at bottom of nav */}
-        <div className="mt-2 pt-2 border-t border-sidebar-border/40">
-          <Link
-            href="/settings"
-            onClick={() => setSidebarOpen(false)}
-            data-testid="nav-settings"
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer",
-              isSettingsActive
-                ? "bg-primary text-white"
-                : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            )}
-          >
-            <Settings className="w-4 h-4 flex-shrink-0" />
-            <span>Settings</span>
-          </Link>
-        </div>
       </nav>
+
+      <div className="border-t border-sidebar-border/40 mx-2 mt-1" />
+
+      {/* Settings — between the two separator lines */}
+      <div className="px-2 pt-1">
+        <Link
+          href="/settings"
+          onClick={() => setSidebarOpen(false)}
+          data-testid="nav-settings"
+          className={cn(
+            "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer",
+            isSettingsActive
+              ? "bg-primary text-white"
+              : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          )}
+        >
+          <Settings className="w-4 h-4 flex-shrink-0" />
+          <span>Settings</span>
+        </Link>
+      </div>
+
+      <div className="border-t border-sidebar-border/40 mx-2 mt-1" />
 
       <PWAInstallButton />
 

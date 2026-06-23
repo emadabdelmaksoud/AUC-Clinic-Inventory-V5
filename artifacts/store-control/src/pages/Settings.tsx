@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { db } from "@/lib/db";
 import { exportBackup, migrateLocalToSupabase } from "@/lib/backup";
 import { isSupabaseConfigured } from "@/lib/supabase";
@@ -15,9 +15,14 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Settings, Moon, Sun, Download, Smartphone, CheckCircle2,
-  Cloud, HardDrive, Clock, Trash2, Loader2,
+  Cloud, HardDrive, Clock, Trash2, Loader2, Plus, X, List,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  getAllCategories, saveAllCategories, resetCategories,
+  getAllUnits, saveAllUnits, resetUnits,
+} from "@/lib/custom-lists";
+import { PHARMA_CATEGORIES, PHARMA_UNITS } from "@/lib/pharma-constants";
 
 async function getSetting(key: string): Promise<string | null> {
   const row = await db.settings.get(key);
@@ -39,6 +44,154 @@ function formatLastRun(iso: string | null): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function EditableList({
+  title,
+  items,
+  newValue,
+  onNewValueChange,
+  onAdd,
+  onRemove,
+  onReset,
+  defaultCount,
+}: {
+  title: string;
+  items: string[];
+  newValue: string;
+  onNewValueChange: (v: string) => void;
+  onAdd: () => void;
+  onRemove: (item: string) => void;
+  onReset: () => void;
+  defaultCount: number;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">{title}</p>
+        <Button
+          size="sm" variant="ghost" className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+          onClick={onReset} type="button"
+          title={`Reset to ${defaultCount} built-in defaults`}
+        >
+          Reset to defaults
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto rounded border bg-muted/20 p-2">
+        {items.length === 0 ? (
+          <p className="text-xs text-muted-foreground px-1 py-0.5">No items. Add one below or reset to defaults.</p>
+        ) : items.map(item => (
+          <span key={item} className="inline-flex items-center gap-1 text-xs bg-background border rounded px-2 py-0.5 shadow-sm">
+            {item}
+            <button
+              type="button"
+              onClick={() => onRemove(item)}
+              className="text-muted-foreground/50 hover:text-destructive transition-colors ml-0.5"
+              title={`Remove "${item}"`}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={newValue}
+          onChange={e => onNewValueChange(e.target.value)}
+          placeholder={`Add to ${title.toLowerCase()}…`}
+          className="h-8 text-sm"
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); onAdd(); } }}
+        />
+        <Button size="sm" variant="outline" className="h-8 px-3 gap-1 flex-shrink-0" onClick={onAdd} type="button">
+          <Plus className="w-3.5 h-3.5" /> Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ListsManagement() {
+  const qc = useQueryClient();
+  const [newCategory, setNewCategory] = useState("");
+  const [newUnit, setNewUnit] = useState("");
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["all_categories"] });
+    qc.invalidateQueries({ queryKey: ["all_units"] });
+  };
+
+  const { data: categories = [] } = useQuery({ queryKey: ["all_categories"], queryFn: getAllCategories });
+  const { data: units = [] } = useQuery({ queryKey: ["all_units"], queryFn: getAllUnits });
+
+  const { mutate: saveCategories } = useMutation({
+    mutationFn: saveAllCategories,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["all_categories"] }),
+  });
+  const { mutate: saveUnits } = useMutation({
+    mutationFn: saveAllUnits,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["all_units"] }),
+  });
+
+  function addCategory() {
+    const v = newCategory.trim();
+    if (!v) return;
+    if (categories.includes(v)) { toast.error("Category already exists"); return; }
+    saveCategories([...categories, v].sort());
+    setNewCategory("");
+  }
+  function removeCategory(c: string) { saveCategories(categories.filter(x => x !== c)); }
+  async function handleResetCategories() {
+    await resetCategories();
+    invalidate();
+    toast.success("Categories reset to defaults");
+  }
+
+  function addUnit() {
+    const v = newUnit.trim();
+    if (!v) return;
+    if (units.includes(v)) { toast.error("Unit already exists"); return; }
+    saveUnits([...units, v].sort());
+    setNewUnit("");
+  }
+  function removeUnit(u: string) { saveUnits(units.filter(x => x !== u)); }
+  async function handleResetUnits() {
+    await resetUnits();
+    invalidate();
+    toast.success("Base units reset to defaults");
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2"><List className="w-4 h-4" /> Lists Management</CardTitle>
+        <CardDescription className="text-xs">
+          Add or remove any category or base unit — including built-in ones. Changes appear immediately in the product form.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <EditableList
+          title="Categories"
+          items={categories}
+          newValue={newCategory}
+          onNewValueChange={setNewCategory}
+          onAdd={addCategory}
+          onRemove={removeCategory}
+          onReset={handleResetCategories}
+          defaultCount={PHARMA_CATEGORIES.length}
+        />
+        <EditableList
+          title="Base Units"
+          items={units}
+          newValue={newUnit}
+          onNewValueChange={setNewUnit}
+          onAdd={addUnit}
+          onRemove={removeUnit}
+          onReset={handleResetUnits}
+          defaultCount={PHARMA_UNITS.length}
+        />
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function SettingsPage() {
@@ -429,6 +582,9 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Lists Management — admin only */}
+      {user?.role === "admin" && <ListsManagement />}
 
       {/* About */}
       <Card>
