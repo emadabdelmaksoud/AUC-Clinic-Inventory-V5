@@ -6,7 +6,7 @@ import { isSupabaseConfigured } from "@/lib/supabase";
 import { usePWAInstall } from "@/hooks/use-pwa-install";
 import { deduplicateProducts } from "@/lib/products";
 import { deduplicateWarehouses } from "@/lib/warehouses";
-import { useAuth } from "@/lib/auth";
+import { useAuth, changeOwnPassword } from "@/lib/auth";
 import { isSuperAdmin, isAdmin } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Settings, Moon, Sun, Download, Smartphone, CheckCircle2,
   Cloud, HardDrive, Clock, Trash2, Loader2, Plus, X, List,
-  Shield, History, RotateCcw, Save,
+  Shield, History, RotateCcw, Save, KeyRound, Eye, EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -196,6 +196,95 @@ function ListsManagement() {
           onReset={handleResetUnits}
           defaultCount={PHARMA_UNITS.length}
         />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChangePasswordCard({ userId }: { userId: string }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNext, setShowNext] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (next.length < 6) { toast.error("New password must be at least 6 characters"); return; }
+    if (next !== confirm) { toast.error("Passwords do not match"); return; }
+    setSaving(true);
+    try {
+      await changeOwnPassword(userId, current, next);
+      toast.success("Password changed successfully");
+      setCurrent(""); setNext(""); setConfirm("");
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <KeyRound className="w-4 h-4" /> Change My Password
+        </CardTitle>
+        <CardDescription>Update your login password. You must enter your current password to confirm.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Current Password</Label>
+            <div className="relative">
+              <Input
+                type={showCurrent ? "text" : "password"}
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                required
+                className="pr-10"
+                placeholder="Enter current password"
+              />
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowCurrent(v => !v)}>
+                {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>New Password</Label>
+            <div className="relative">
+              <Input
+                type={showNext ? "text" : "password"}
+                value={next}
+                onChange={(e) => setNext(e.target.value)}
+                required
+                minLength={6}
+                className="pr-10"
+                placeholder="At least 6 characters"
+              />
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowNext(v => !v)}>
+                {showNext ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Confirm New Password</Label>
+            <Input
+              type={showNext ? "text" : "password"}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              minLength={6}
+              placeholder="Repeat new password"
+            />
+            {confirm && next !== confirm && (
+              <p className="text-xs text-destructive">Passwords do not match</p>
+            )}
+          </div>
+          <Button type="submit" disabled={saving || (!!confirm && next !== confirm)} className="w-full sm:w-auto">
+            {saving ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Changing…</> : "Change Password"}
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );
@@ -767,6 +856,9 @@ export default function SettingsPage() {
 
       {/* Lists Management — administrator only */}
       {isSuperAdm && <ListsManagement />}
+
+      {/* Change My Password — all roles */}
+      {user && <ChangePasswordCard userId={user.id} />}
 
       {/* Security — auto-logout */}
       <SecurityCard />

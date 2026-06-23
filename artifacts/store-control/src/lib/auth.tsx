@@ -1,3 +1,4 @@
+// @refresh reset
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { db, type User, generateId, now } from "./db";
 import type { AppRole } from "./permissions";
@@ -167,6 +168,20 @@ export async function updateUserPassword(
   if (target?.role === "administrator") {
     throw new Error("Administrator credentials can only be changed by the Administrator themselves.");
   }
+  const hash = await hashPassword(newPassword);
+  await db.users.update(userId, { passwordHash: hash, updatedAt: now() });
+}
+
+export async function changeOwnPassword(
+  userId: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const target = await db.users.get(userId);
+  if (!target) throw new Error("User not found.");
+  const valid = await verifyPassword(currentPassword, target.passwordHash);
+  if (!valid) throw new Error("Current password is incorrect.");
+  if (newPassword.length < 6) throw new Error("New password must be at least 6 characters.");
   const hash = await hashPassword(newPassword);
   await db.users.update(userId, { passwordHash: hash, updatedAt: now() });
 }
