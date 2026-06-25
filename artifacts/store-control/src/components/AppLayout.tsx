@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Box, Warehouse, BarChart3, FileUp,
   Users, QrCode, ClipboardList, HardDrive, Settings, LogOut, Menu, X,
   Scale, ClipboardEdit, BellRing, ShoppingCart, ChevronDown,
-  PackageSearch, FolderOpen, BarChart2, ShieldCheck,
+  PackageSearch, FolderOpen, BarChart2, ShieldCheck, Briefcase,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -70,6 +70,15 @@ function useSidebarNav() {
   });
 
   const GROUPS: NavGroup[] = [
+    ...(sections.assets ? [{
+      id: "assets",
+      label: "Assets & Equipment",
+      icon: Briefcase,
+      items: [
+        { label: "Assets", path: "/assets", icon: Briefcase },
+        { label: "Types & Categories", path: "/asset-types", icon: FolderOpen },
+      ] as NavItem[],
+    }] : []),
     {
       id: "inventory",
       label: "Inventory",

@@ -111,6 +111,54 @@ export interface AppSetting {
   value: string;
 }
 
+// ── Assets & Equipment ────────────────────────────────────────────────────────
+
+export interface AssetType {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssetCategory {
+  id: string;
+  assetTypeId: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AssetStatus =
+  | "active"
+  | "in_storage"
+  | "under_maintenance"
+  | "lost"
+  | "disposed";
+
+export type CustodianType = "system_user" | "external_staff";
+
+export interface Asset {
+  id: string;
+  assetName: string;
+  assetTypeId: string;
+  assetCategoryId: string | null;
+  fyNumber: string | null;
+  faNumber: string | null;
+  ccNumber: string | null;
+  serialNumber: string | null;
+  quantity: number;
+  status: AssetStatus;
+  custodianType: CustodianType | null;
+  custodianUserId: string | null;
+  custodianName: string | null;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export class StoreControlDB extends Dexie {
   users!: Table<User, string>;
   products!: Table<Product, string>;
@@ -121,6 +169,9 @@ export class StoreControlDB extends Dexie {
   inventoryTransactions!: Table<InventoryTransaction, string>;
   auditLogs!: Table<AuditLog, string>;
   settings!: Table<AppSetting, string>;
+  assetTypes!: Table<AssetType, string>;
+  assetCategories!: Table<AssetCategory, string>;
+  assets!: Table<Asset, string>;
 
   constructor() {
     super("StoreControlDB");
@@ -135,6 +186,11 @@ export class StoreControlDB extends Dexie {
         "id, transactionType, productId, batchId, warehouseId, createdAt",
       auditLogs: "id, tableName, userId, createdAt",
       settings: "key",
+    });
+    this.version(2).stores({
+      assetTypes: "id, name",
+      assetCategories: "id, assetTypeId, name",
+      assets: "id, assetTypeId, assetCategoryId, status, custodianUserId, createdAt",
     });
   }
 }
@@ -160,6 +216,9 @@ function makeSupabaseDB() {
     ),
     auditLogs: new SupabaseTableAdapter<AuditLog>(client, "audit_logs"),
     settings: new SupabaseTableAdapter<AppSetting>(client, "settings", "key"),
+    assetTypes: new SupabaseTableAdapter<AssetType>(client, "asset_types"),
+    assetCategories: new SupabaseTableAdapter<AssetCategory>(client, "asset_categories"),
+    assets: new SupabaseTableAdapter<Asset>(client, "assets"),
   };
 }
 
