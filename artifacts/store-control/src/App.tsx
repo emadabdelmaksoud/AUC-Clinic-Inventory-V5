@@ -28,6 +28,8 @@ import StaffReportPage from "@/pages/StaffReport";
 import PurchaseRequestPage from "@/pages/PurchaseRequest";
 import AssetsPage from "@/pages/Assets";
 import AssetTypesPage from "@/pages/AssetTypes";
+import AssetReportPage from "@/pages/AssetReport";
+import MyCustodyPage from "@/pages/MyCustody";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 30, retry: 1 } },
@@ -78,6 +80,8 @@ function AppRouter() {
         <Route path="/settings" component={SettingsPage} />
         <Route path="/assets" component={AssetsPage} />
         <Route path="/asset-types" component={AssetTypesPage} />
+        <Route path="/asset-report" component={AssetReportPage} />
+        <Route path="/my-custody" component={MyCustodyPage} />
         <Route><Redirect to="/" /></Route>
       </Switch>
     </AppLayout>

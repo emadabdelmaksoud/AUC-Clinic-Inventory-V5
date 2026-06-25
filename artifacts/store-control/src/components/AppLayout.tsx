@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Box, Warehouse, BarChart3, FileUp,
   Users, QrCode, ClipboardList, HardDrive, Settings, LogOut, Menu, X,
   Scale, ClipboardEdit, BellRing, ShoppingCart, ChevronDown,
-  PackageSearch, FolderOpen, BarChart2, ShieldCheck, Briefcase,
+  PackageSearch, FolderOpen, BarChart2, ShieldCheck, Briefcase, Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -76,6 +76,7 @@ function useSidebarNav() {
       icon: Briefcase,
       items: [
         { label: "Assets", path: "/assets", icon: Briefcase },
+        { label: "Asset Report", path: "/asset-report", icon: BarChart3 },
         { label: "Types & Categories", path: "/asset-types", icon: FolderOpen },
       ] as NavItem[],
     }] : []),
@@ -95,6 +96,7 @@ function useSidebarNav() {
       label: "Operations",
       icon: FolderOpen,
       items: [
+        { label: "My Custody", path: "/my-custody", icon: Shield },
         sections.reports    && { label: "Balance",          path: "/balance",           icon: Scale,        permKey: "reports" },
         sections.inventory  && { label: "Purchase Request", path: "/purchase-request",  icon: ShoppingCart, permKey: "inventory", badge: purchaseRequestCount },
         sections.inventory  && { label: "Print Order",      path: "/print-order",       icon: ClipboardEdit, permKey: "inventory" },
