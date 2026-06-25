@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { listWarehouses, createWarehouse, updateWarehouse, deleteWarehouse, warehouseSchema, type WarehouseInput } from "@/lib/warehouses";
 import { useAuth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -82,6 +82,7 @@ function WarehouseForm({ onClose, warehouse }: { onClose: () => void; warehouse?
 
 export default function WarehousesPage() {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -112,9 +113,14 @@ export default function WarehousesPage() {
     onError: (e) => toast.error((e as Error).message),
   });
 
-  const canEdit = can(user?.role, "inventory", "edit");
-  const canDelete = can(user?.role, "inventory", "delete");
-  const canCreate = can(user?.role, "inventory", "edit");
+  if (!can(user?.role, "warehouses", "view")) {
+    navigate("/");
+    return null;
+  }
+
+  const canEdit = can(user?.role, "warehouses", "edit");
+  const canDelete = can(user?.role, "warehouses", "delete");
+  const canCreate = can(user?.role, "warehouses", "create");
 
   return (
     <div className="space-y-4 max-w-5xl">

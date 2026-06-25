@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getWarehouse, listSections, createSection, updateSection, deleteSection, sectionSchema, type SectionInput } from "@/lib/warehouses";
 import { listBatches } from "@/lib/inventory";
@@ -59,6 +59,7 @@ function SectionForm({ warehouseId, onClose, section }: { warehouseId: string; o
 export default function WarehouseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [editSection, setEditSection] = useState<(SectionInput & { id: string }) | null>(null);
@@ -84,7 +85,12 @@ export default function WarehouseDetailPage() {
     onError: (e) => toast.error((e as Error).message),
   });
 
-  const canEdit = can(user?.role, "inventory", "edit");
+  if (!can(user?.role, "warehouses", "view")) {
+    navigate("/");
+    return null;
+  }
+
+  const canEdit = can(user?.role, "warehouses", "edit");
 
   if (isLoading) return <div className="h-48 bg-muted animate-pulse rounded-lg" />;
   if (!warehouse) return <div className="text-center py-12 text-muted-foreground">Warehouse not found</div>;

@@ -3,6 +3,7 @@ export type AppRole = "administrator" | "admin" | "staff";
 export type Resource =
   | "products"
   | "inventory"
+  | "warehouses"
   | "dispensing"
   | "transfers"
   | "disposal"
@@ -12,7 +13,10 @@ export type Resource =
   | "users"
   | "settings"
   | "audit_logs"
-  | "backups";
+  | "backups"
+  | "org_settings"
+  | "lists_management"
+  | "restore_points";
 
 export type Action = "view" | "create" | "edit" | "delete" | "manage";
 
@@ -24,6 +28,7 @@ const MATRIX: Matrix = {
   administrator: {
     products: ALL,
     inventory: ALL,
+    warehouses: ALL,
     dispensing: ALL,
     transfers: ALL,
     disposal: ALL,
@@ -34,10 +39,14 @@ const MATRIX: Matrix = {
     settings: ALL,
     audit_logs: ["view", "manage"],
     backups: ["view", "create", "manage"],
+    org_settings: ALL,
+    lists_management: ALL,
+    restore_points: ALL,
   },
   admin: {
     products: ALL,
     inventory: ALL,
+    warehouses: ["view"],
     dispensing: ALL,
     transfers: ALL,
     disposal: ALL,
@@ -47,11 +56,15 @@ const MATRIX: Matrix = {
     users: ["view", "create", "edit", "delete", "manage"],
     settings: ALL,
     audit_logs: ["view", "manage"],
-    backups: ["view", "create", "manage"],
+    backups: [],
+    org_settings: [],
+    lists_management: [],
+    restore_points: [],
   },
   staff: {
     products: ["view"],
     inventory: ["view", "create"],
+    warehouses: ["view"],
     dispensing: ["view", "create"],
     transfers: ["view", "create"],
     disposal: ["view", "create"],
@@ -62,6 +75,9 @@ const MATRIX: Matrix = {
     settings: [],
     audit_logs: [],
     backups: [],
+    org_settings: [],
+    lists_management: [],
+    restore_points: [],
   },
 };
 
@@ -89,10 +105,17 @@ export function canManageUser(
   return false;
 }
 
+export function canResetPassword(
+  actorRole: AppRole | null | undefined,
+): boolean {
+  return actorRole === "administrator";
+}
+
 export function visibleSections(role: AppRole | null | undefined) {
   return {
     products: can(role, "products", "view"),
     inventory: can(role, "inventory", "view"),
+    warehouses: can(role, "warehouses", "view"),
     reports: can(role, "reports", "view"),
     importExport: can(role, "import_export", "view"),
     barcodes: can(role, "barcodes", "view"),

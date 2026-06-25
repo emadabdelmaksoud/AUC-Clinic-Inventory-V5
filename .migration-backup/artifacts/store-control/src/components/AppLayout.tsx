@@ -77,7 +77,7 @@ function useSidebarNav() {
       items: [
         sections.products   && { label: "Products",   path: "/products",   icon: Box,        permKey: "products" },
         sections.inventory  && { label: "Inventory",  path: "/inventory",  icon: Warehouse,  permKey: "inventory" },
-        sections.inventory  && { label: "Warehouses", path: "/warehouses", icon: Warehouse,  permKey: "inventory" },
+        sections.warehouses && { label: "Warehouses", path: "/warehouses", icon: Warehouse,  permKey: "warehouses" },
         sections.barcodes   && { label: "Barcodes",   path: "/barcodes",   icon: QrCode,     permKey: "barcodes" },
       ].filter(Boolean) as NavItem[],
     },

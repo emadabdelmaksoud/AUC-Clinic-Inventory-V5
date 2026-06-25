@@ -1,1 +1,0 @@
-- [AUC Clinic roles & build](auc-clinic-notes.md) — 3-tier roles (administrator/admin/staff); dist/public is authoritative build output; vercel.json at workspace root
