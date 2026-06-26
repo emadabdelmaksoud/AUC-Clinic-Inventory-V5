@@ -1,0 +1,1 @@
+- [Asset module architecture](asset-module.md) — asset_transactions table, location fields, Excel import patterns for this project.

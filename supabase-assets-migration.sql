@@ -6,9 +6,6 @@
 
 -- IMPORTANT: Column names use camelCase to match the TypeScript
 -- interface properties, consistent with your existing tables.
--- If your existing tables (users, products, etc.) use snake_case
--- column names instead, replace camelCase with snake_case below
--- and update the TypeScript interfaces in src/lib/db.ts to match.
 
 -- ── 1. Asset Types ───────────────────────────────────────────
 
@@ -45,7 +42,7 @@ CREATE TABLE IF NOT EXISTS assets (
                      CHECK ("status" IN ('active','in_storage','under_maintenance','lost','disposed')),
   "custodianType"    TEXT
                      CHECK ("custodianType" IN ('system_user','external_staff') OR "custodianType" IS NULL),
-  "custodianUserId"  TEXT,   -- references users("id"), soft link
+  "custodianUserId"  TEXT,
   "custodianName"    TEXT,
   "custodianPhone"   TEXT,
   "custodianIdNumber" TEXT,
@@ -53,49 +50,69 @@ CREATE TABLE IF NOT EXISTS assets (
   "custodianAssignmentDate" DATE,
   "custodianNotes"   TEXT,
   "notes"            TEXT,
-  "createdBy"        TEXT,   -- references users("id"), soft link
+  "warehouseId"      TEXT,   -- soft link to warehouses("id")
+  "sectionId"        TEXT,   -- soft link to warehouse_sections("id")
+  "createdBy"        TEXT,   -- soft link to users("id")
   "createdAt"        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt"        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── 4. Performance Indexes ───────────────────────────────────
+-- ── 4. Asset Transactions (History Log) ───────────────────────
+-- Records every create / update / delete / transfer / import action on assets.
 
-CREATE INDEX IF NOT EXISTS idx_asset_categories_type
-  ON asset_categories ("assetTypeId");
+CREATE TABLE IF NOT EXISTS asset_transactions (
+  "id"               TEXT PRIMARY KEY,
+  "assetId"          TEXT NOT NULL,   -- soft link to assets("id")
+  "action"           TEXT NOT NULL
+                     CHECK ("action" IN (
+                       'created', 'updated', 'deleted',
+                       'custody_transferred', 'location_changed', 'status_changed', 'imported'
+                     )),
+  "summary"          TEXT NOT NULL,
+  "performedBy"      TEXT,            -- soft link to users("id")
+  "performedByName"  TEXT,
+  "createdAt"        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
-CREATE INDEX IF NOT EXISTS idx_assets_type
-  ON assets ("assetTypeId");
+-- ── 5. Performance Indexes ───────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_assets_category
-  ON assets ("assetCategoryId");
+CREATE INDEX IF NOT EXISTS idx_asset_categories_type    ON asset_categories ("assetTypeId");
+CREATE INDEX IF NOT EXISTS idx_assets_type              ON assets ("assetTypeId");
+CREATE INDEX IF NOT EXISTS idx_assets_category          ON assets ("assetCategoryId");
+CREATE INDEX IF NOT EXISTS idx_assets_status            ON assets ("status");
+CREATE INDEX IF NOT EXISTS idx_assets_custodian_user    ON assets ("custodianUserId");
+CREATE INDEX IF NOT EXISTS idx_assets_warehouse         ON assets ("warehouseId");
+CREATE INDEX IF NOT EXISTS idx_assets_section           ON assets ("sectionId");
+CREATE INDEX IF NOT EXISTS idx_assets_created_at        ON assets ("createdAt");
+CREATE INDEX IF NOT EXISTS idx_asset_txn_asset          ON asset_transactions ("assetId");
+CREATE INDEX IF NOT EXISTS idx_asset_txn_action         ON asset_transactions ("action");
+CREATE INDEX IF NOT EXISTS idx_asset_txn_created_at     ON asset_transactions ("createdAt" DESC);
 
-CREATE INDEX IF NOT EXISTS idx_assets_status
-  ON assets ("status");
+-- ── 6. Upgrading from the previous migration (no warehouseId/sectionId) ──────
+-- If you already ran an earlier version of this file, add the missing columns:
+--
+-- ALTER TABLE assets
+--   ADD COLUMN IF NOT EXISTS "warehouseId" TEXT,
+--   ADD COLUMN IF NOT EXISTS "sectionId"   TEXT;
+--
+-- Then run the asset_transactions table DDL above.
 
-CREATE INDEX IF NOT EXISTS idx_assets_custodian_user
-  ON assets ("custodianUserId");
-
-CREATE INDEX IF NOT EXISTS idx_assets_created_at
-  ON assets ("createdAt");
-
--- ── 5. Row Level Security (RLS) ──────────────────────────────
+-- ── 7. Row Level Security (RLS) ──────────────────────────────
 -- The app uses a custom auth system (not Supabase Auth).
--- If your app authenticates via Supabase JWT, enable RLS below.
--- Otherwise, leave RLS disabled and rely on the app's role-based
--- access control (only administrators can access these tables).
+-- If using Supabase JWT auth, uncomment to enable RLS:
 
--- ALTER TABLE asset_types      ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE asset_categories ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE assets           ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE asset_types         ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE asset_categories    ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE assets              ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE asset_transactions  ENABLE ROW LEVEL SECURITY;
 
--- Allow full access to authenticated Supabase users (if using Supabase Auth):
--- CREATE POLICY "authenticated_full" ON asset_types      FOR ALL TO authenticated USING (true) WITH CHECK (true);
--- CREATE POLICY "authenticated_full" ON asset_categories FOR ALL TO authenticated USING (true) WITH CHECK (true);
--- CREATE POLICY "authenticated_full" ON assets           FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- CREATE POLICY "authenticated_full" ON asset_types         FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- CREATE POLICY "authenticated_full" ON asset_categories    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- CREATE POLICY "authenticated_full" ON assets              FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- CREATE POLICY "authenticated_full" ON asset_transactions  FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
--- ── 6. Default Asset Types & Categories (seed data) ──────────
--- Run this AFTER the tables are created.
--- Uses ON CONFLICT DO NOTHING so it is safe to re-run.
+-- ── 8. Default Asset Types & Categories (seed data) ──────────
+-- Safe to re-run — uses ON CONFLICT DO NOTHING.
 
 INSERT INTO asset_types ("id", "name") VALUES
   ('a0000000-0000-0000-0000-000000000001', 'Medical Equipment'),
@@ -137,10 +154,11 @@ INSERT INTO asset_categories ("id", "assetTypeId", "name") VALUES
   ('c0000005-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000005', 'Delivery Vehicle')
 ON CONFLICT ("id") DO NOTHING;
 
--- ── 7. Verification ──────────────────────────────────────────
-
--- Run these to confirm the tables were created correctly:
--- SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('asset_types','asset_categories','assets');
--- SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'assets' ORDER BY ordinal_position;
--- SELECT * FROM asset_types ORDER BY name;
--- SELECT c.name, t.name as type FROM asset_categories c JOIN asset_types t ON t.id = c."assetTypeId" ORDER BY t.name, c.name;
+-- ── 9. Verification ──────────────────────────────────────────
+-- SELECT table_name FROM information_schema.tables
+--   WHERE table_schema = 'public'
+--   AND table_name IN ('asset_types','asset_categories','assets','asset_transactions');
+-- SELECT column_name, data_type FROM information_schema.columns
+--   WHERE table_name = 'assets' ORDER BY ordinal_position;
+-- SELECT column_name, data_type FROM information_schema.columns
+--   WHERE table_name = 'asset_transactions' ORDER BY ordinal_position;
