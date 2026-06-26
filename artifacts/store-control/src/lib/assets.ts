@@ -33,6 +33,7 @@ export const assetSchema = z.object({
   custodianPhone: z.string().trim().max(50).nullable().optional(),
   custodianIdNumber: z.string().trim().max(100).nullable().optional(),
   custodianEmail: z.string().trim().email("Invalid email").max(255).nullable().optional().or(z.literal("")),
+  custodianAssignmentDate: z.string().nullable().optional(),
   custodianNotes: z.string().trim().max(1000).nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
 });
@@ -175,6 +176,7 @@ function buildAssetRecord(input: AssetInput, userId: string | null, existing?: A
     custodianPhone: blank(input.custodianPhone),
     custodianIdNumber: blank(input.custodianIdNumber),
     custodianEmail: blank(input.custodianEmail),
+    custodianAssignmentDate: input.custodianAssignmentDate || null,
     custodianNotes: blank(input.custodianNotes),
     notes: blank(input.notes),
     updatedAt: now(),

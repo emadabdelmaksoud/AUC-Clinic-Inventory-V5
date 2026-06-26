@@ -154,6 +154,7 @@ export interface Asset {
   custodianPhone: string | null;
   custodianIdNumber: string | null;
   custodianEmail: string | null;
+  custodianAssignmentDate: string | null;
   custodianNotes: string | null;
   notes: string | null;
   createdBy: string | null;

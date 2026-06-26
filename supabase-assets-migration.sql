@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS assets (
   "custodianPhone"   TEXT,
   "custodianIdNumber" TEXT,
   "custodianEmail"   TEXT,
+  "custodianAssignmentDate" DATE,
   "custodianNotes"   TEXT,
   "notes"            TEXT,
   "createdBy"        TEXT,   -- references users("id"), soft link

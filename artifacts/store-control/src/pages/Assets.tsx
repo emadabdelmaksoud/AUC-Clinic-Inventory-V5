@@ -90,6 +90,7 @@ export function AssetDetail({ asset, types, categories }: { asset: Asset; types:
           <DetailRow label="Phone" value={asset.custodianPhone} />
           <DetailRow label="ID Number" value={asset.custodianIdNumber} />
           <DetailRow label="Email" value={asset.custodianEmail} />
+          <DetailRow label="Assignment Date" value={asset.custodianAssignmentDate ? format(new Date(asset.custodianAssignmentDate), "dd MMM yyyy") : null} />
           <DetailRow label="Notes" value={asset.custodianNotes} />
         </div>
       )}
@@ -132,6 +133,7 @@ function AssetForm({ onClose, editing, types, categories }: {
           custodianPhone: editing.custodianPhone ?? "",
           custodianIdNumber: editing.custodianIdNumber ?? "",
           custodianEmail: editing.custodianEmail ?? "",
+          custodianAssignmentDate: editing.custodianAssignmentDate ?? "",
           custodianNotes: editing.custodianNotes ?? "",
           notes: editing.notes ?? "",
         }
@@ -139,7 +141,7 @@ function AssetForm({ onClose, editing, types, categories }: {
           assetName: "", assetTypeId: "", assetCategoryId: "", fyNumber: "", faNumber: "",
           ccNumber: "", serialNumber: "", quantity: 1, status: "active",
           custodianType: undefined, custodianUserId: "", custodianName: "",
-          custodianPhone: "", custodianIdNumber: "", custodianEmail: "", custodianNotes: "", notes: "",
+          custodianPhone: "", custodianIdNumber: "", custodianEmail: "", custodianAssignmentDate: "", custodianNotes: "", notes: "",
         },
   });
 
@@ -324,6 +326,13 @@ function AssetForm({ onClose, editing, types, categories }: {
                     </FormItem>
                   )} />
                 </div>
+                <FormField control={form.control} name="custodianAssignmentDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs text-muted-foreground">Assignment Date</FormLabel>
+                    <FormControl><Input type="date" {...field} value={field.value ?? ""} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="custodianNotes" render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-xs text-muted-foreground">Custodian Notes</FormLabel>
