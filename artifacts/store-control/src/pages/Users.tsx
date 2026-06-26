@@ -214,7 +214,7 @@ export default function UsersPage() {
                 <th className="text-left px-4 py-3 font-medium">Username</th>
                 <th className="text-left px-4 py-3 font-medium">Role</th>
                 <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Created</th>
-                {canManage && <th className="px-4 py-3 text-right font-medium">Actions</th>}
+                <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
