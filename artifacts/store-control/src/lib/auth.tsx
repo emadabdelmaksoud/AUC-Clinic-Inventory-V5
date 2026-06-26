@@ -191,6 +191,29 @@ export async function listUsers(): Promise<Omit<User, "passwordHash">[]> {
   return users.map(({ passwordHash: _ph, ...u }) => u);
 }
 
+export async function updateUserProfile(
+  userId: string,
+  updates: { fullName?: string; role?: AppRole },
+  actorRole?: AppRole,
+): Promise<void> {
+  const target = await db.users.get(userId);
+  if (!target) throw new Error("User not found.");
+  if (updates.role !== undefined && updates.role !== target.role) {
+    if (actorRole !== "administrator" && actorRole !== "admin") {
+      throw new Error("Access denied: You cannot change roles.");
+    }
+    if (target.role === "administrator" || updates.role === "administrator") {
+      if (actorRole !== "administrator") {
+        throw new Error("Only the Administrator can assign or remove the Administrator role.");
+      }
+    }
+  }
+  const patch: Partial<User> = { updatedAt: now() };
+  if (updates.fullName !== undefined) patch.fullName = updates.fullName.trim();
+  if (updates.role !== undefined) patch.role = updates.role as AppRole;
+  await db.users.update(userId, patch);
+}
+
 export async function deleteUser(id: string) {
   const target = await db.users.get(id);
   if (target?.role === "administrator") {
