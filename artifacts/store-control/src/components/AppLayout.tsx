@@ -5,6 +5,7 @@ import { visibleSections } from "@/lib/permissions";
 import { useQuery } from "@tanstack/react-query";
 import { listExpiredBatches, listNearExpiryBatches } from "@/lib/fifo";
 import { db } from "@/lib/db";
+import { seedDefaultAssetTypes } from "@/lib/assets";
 import {
   LayoutDashboard, Box, Warehouse, BarChart3, FileUp,
   Users, QrCode, ClipboardList, HardDrive, Settings, LogOut, Menu, X,
@@ -149,6 +150,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     return new Set(activeGroupId ? [activeGroupId] : []);
   });
+
+  useEffect(() => {
+    seedDefaultAssetTypes().catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (activeGroupId) {

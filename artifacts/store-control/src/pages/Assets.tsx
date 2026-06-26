@@ -25,7 +25,7 @@ import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Briefcase, Plus, Search, Pencil, Trash2, Eye, X, Download, ChevronDown, FileSpreadsheet, FileText } from "lucide-react";
+import { Briefcase, Plus, Search, Pencil, Trash2, Eye, X, Download, ChevronDown, FileSpreadsheet, FileText, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Redirect } from "wouter";
@@ -364,6 +364,200 @@ function AssetForm({ onClose, editing, types, categories }: {
   );
 }
 
+// ── Transfer Custody Dialog ───────────────────────────────────────────────────
+
+function TransferCustodyDialog({ asset, types, categories, onClose }: {
+  asset: Asset;
+  types: AssetType[];
+  categories: AssetCategory[];
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: listUsers });
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const form = useForm<AssetInput>({
+    resolver: zodResolver(assetSchema),
+    defaultValues: {
+      assetName: asset.assetName,
+      assetTypeId: asset.assetTypeId,
+      assetCategoryId: asset.assetCategoryId ?? "",
+      fyNumber: asset.fyNumber ?? "",
+      faNumber: asset.faNumber ?? "",
+      ccNumber: asset.ccNumber ?? "",
+      serialNumber: asset.serialNumber ?? "",
+      quantity: asset.quantity,
+      status: asset.status,
+      notes: asset.notes ?? "",
+      custodianType: undefined,
+      custodianUserId: "",
+      custodianName: "",
+      custodianPhone: "",
+      custodianIdNumber: "",
+      custodianEmail: "",
+      custodianAssignmentDate: today,
+      custodianNotes: "",
+    },
+  });
+
+  const custodianType = form.watch("custodianType");
+
+  const handleUserSelect = (userId: string) => {
+    form.setValue("custodianUserId", userId);
+    const u = users.find(u => u.id === userId);
+    if (u) form.setValue("custodianName", u.fullName || u.username);
+  };
+
+  const { mutate, isPending } = useMutation({
+    mutationFn: async (data: AssetInput) => {
+      await updateAsset(asset.id, data, user?.id ?? null);
+    },
+    onSuccess: () => {
+      toast.success("Custody transferred successfully");
+      qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: ["myAssets"] });
+      onClose();
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const prevCustodian = asset.custodianName || "—";
+  const prevType = asset.custodianType === "system_user" ? "System User" : asset.custodianType === "external_staff" ? "External Staff" : "Unassigned";
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(d => mutate(d))} className="flex flex-col" style={{ maxHeight: "72vh" }}>
+        <div className="overflow-y-auto flex-1 pr-1 space-y-4 pb-2">
+
+          {/* Current custodian (read-only) */}
+          <div className="rounded-lg bg-muted/40 border px-4 py-3 space-y-1.5 text-sm">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Current Custodian</p>
+            <div className="flex gap-2">
+              <span className="w-28 text-muted-foreground flex-shrink-0">Type</span>
+              <span className="font-medium">{prevType}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-28 text-muted-foreground flex-shrink-0">Name</span>
+              <span className="font-medium">{prevCustodian}</span>
+            </div>
+            {asset.custodianPhone && (
+              <div className="flex gap-2">
+                <span className="w-28 text-muted-foreground flex-shrink-0">Phone</span>
+                <span>{asset.custodianPhone}</span>
+              </div>
+            )}
+            {asset.custodianAssignmentDate && (
+              <div className="flex gap-2">
+                <span className="w-28 text-muted-foreground flex-shrink-0">Assignment Date</span>
+                <span>{format(new Date(asset.custodianAssignmentDate), "dd MMM yyyy")}</span>
+              </div>
+            )}
+          </div>
+
+          {/* New custodian */}
+          <div className="border rounded-lg p-3 space-y-3 bg-muted/20">
+            <Label className="text-sm font-semibold">New Custodian</Label>
+
+            <FormField control={form.control} name="custodianType" render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs text-muted-foreground">Custodian Type *</FormLabel>
+                <Select value={field.value ?? ""} onValueChange={v => {
+                  field.onChange(v === "" ? null : v);
+                  form.setValue("custodianUserId", "");
+                  form.setValue("custodianName", "");
+                }}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="Select type…" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="system_user">System User</SelectItem>
+                    <SelectItem value="external_staff">External Staff</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            {custodianType === "system_user" && (
+              <FormField control={form.control} name="custodianUserId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs text-muted-foreground">Select System User *</FormLabel>
+                  <Select value={field.value ?? ""} onValueChange={handleUserSelect}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Select user…" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {users.map(u => <SelectItem key={u.id} value={u.id}>{u.fullName || u.username} ({u.role})</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+
+            {custodianType && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField control={form.control} name="custodianName" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-muted-foreground">Full Name</FormLabel>
+                      <FormControl><Input {...field} value={field.value ?? ""} placeholder="Custodian full name" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="custodianPhone" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-muted-foreground">Phone Number</FormLabel>
+                      <FormControl><Input {...field} value={field.value ?? ""} placeholder="+966…" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField control={form.control} name="custodianIdNumber" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-muted-foreground">ID / National ID</FormLabel>
+                      <FormControl><Input {...field} value={field.value ?? ""} placeholder="ID number" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="custodianEmail" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-muted-foreground">Email</FormLabel>
+                      <FormControl><Input type="email" {...field} value={field.value ?? ""} placeholder="email@example.com" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <FormField control={form.control} name="custodianAssignmentDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs text-muted-foreground">Assignment Date</FormLabel>
+                    <FormControl><Input type="date" {...field} value={field.value ?? ""} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="custodianNotes" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs text-muted-foreground">Transfer Notes</FormLabel>
+                    <FormControl><Textarea {...field} value={field.value ?? ""} rows={2} placeholder="Reason for transfer, handover remarks…" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t mt-2 flex-shrink-0">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={isPending || !custodianType}>
+            <ArrowRightLeft className="w-4 h-4 mr-1.5" />
+            {isPending ? "Transferring…" : "Transfer Custody"}
+          </Button>
+        </div>
+      </form>
+    </Form>
+  );
+}
+
 // ── Export Dropdown ───────────────────────────────────────────────────────────
 
 function ExportDropdown() {
@@ -456,6 +650,7 @@ export default function AssetsPage() {
   const [editingAsset, setEditingAsset] = useState<Asset | undefined>();
   const [viewingAsset, setViewingAsset] = useState<Asset | undefined>();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [transferringAsset, setTransferringAsset] = useState<Asset | undefined>();
 
   const filteredAssets = useMemo(() => filterAssets(allAssets, filters), [allAssets, filters]);
   const filteredCats = filters.assetTypeId ? categories.filter(c => c.assetTypeId === filters.assetTypeId) : categories;
@@ -577,9 +772,10 @@ export default function AssetsPage() {
                     <td className="px-4 py-3"><StatusBadge status={asset.status} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setViewingAsset(asset)}><Eye className="w-3.5 h-3.5" /></Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditingAsset(asset); setShowCreate(true); }}><Pencil className="w-3.5 h-3.5" /></Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => setDeleteId(asset.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7" title="View details" onClick={() => setViewingAsset(asset)}><Eye className="w-3.5 h-3.5" /></Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit asset" onClick={() => { setEditingAsset(asset); setShowCreate(true); }}><Pencil className="w-3.5 h-3.5" /></Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20" title="Transfer custody" onClick={() => setTransferringAsset(asset)}><ArrowRightLeft className="w-3.5 h-3.5" /></Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10" title="Delete asset" onClick={() => setDeleteId(asset.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
                       </div>
                     </td>
                   </tr>
@@ -609,6 +805,28 @@ export default function AssetsPage() {
             <DialogDescription>{viewingAsset?.assetName}</DialogDescription>
           </DialogHeader>
           {viewingAsset && <AssetDetail asset={viewingAsset} types={types} categories={categories} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer Custody Dialog */}
+      <Dialog open={!!transferringAsset} onOpenChange={o => !o && setTransferringAsset(undefined)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="w-4 h-4" /> Transfer Custody
+            </DialogTitle>
+            <DialogDescription>
+              <span className="font-medium">{transferringAsset?.assetName}</span> — assign this asset to a new custodian.
+            </DialogDescription>
+          </DialogHeader>
+          {transferringAsset && (
+            <TransferCustodyDialog
+              asset={transferringAsset}
+              types={types}
+              categories={categories}
+              onClose={() => setTransferringAsset(undefined)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
