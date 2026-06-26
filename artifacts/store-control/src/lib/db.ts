@@ -197,6 +197,54 @@ export class StoreControlDB extends Dexie {
       assetCategories: "id, assetTypeId, name",
       assets: "id, assetTypeId, assetCategoryId, status, custodianUserId, createdAt",
     });
+    // v3: seed default asset types & categories during DB open (runs once per browser)
+    this.version(3).upgrade(tx => {
+      return tx.table("assetTypes").count().then((n: number) => {
+        if (n > 0) return;
+        const now = new Date().toISOString();
+        const TYPES = [
+          { id: "a0000000-0000-0000-0000-000000000001", name: "Medical Equipment", createdAt: now, updatedAt: now },
+          { id: "a0000000-0000-0000-0000-000000000002", name: "IT Equipment",       createdAt: now, updatedAt: now },
+          { id: "a0000000-0000-0000-0000-000000000003", name: "Furniture",          createdAt: now, updatedAt: now },
+          { id: "a0000000-0000-0000-0000-000000000004", name: "Office Equipment",   createdAt: now, updatedAt: now },
+          { id: "a0000000-0000-0000-0000-000000000005", name: "Vehicle",            createdAt: now, updatedAt: now },
+          { id: "a0000000-0000-0000-0000-000000000006", name: "Other",              createdAt: now, updatedAt: now },
+        ];
+        const CATS = [
+          // Medical Equipment
+          { id: "c0000001-0000-0000-0000-000000000001", assetTypeId: "a0000000-0000-0000-0000-000000000001", name: "Diagnostic Equipment",    createdAt: now, updatedAt: now },
+          { id: "c0000001-0000-0000-0000-000000000002", assetTypeId: "a0000000-0000-0000-0000-000000000001", name: "Patient Monitoring",       createdAt: now, updatedAt: now },
+          { id: "c0000001-0000-0000-0000-000000000003", assetTypeId: "a0000000-0000-0000-0000-000000000001", name: "Surgical Tools",           createdAt: now, updatedAt: now },
+          { id: "c0000001-0000-0000-0000-000000000004", assetTypeId: "a0000000-0000-0000-0000-000000000001", name: "Laboratory Equipment",     createdAt: now, updatedAt: now },
+          { id: "c0000001-0000-0000-0000-000000000005", assetTypeId: "a0000000-0000-0000-0000-000000000001", name: "Rehabilitation Equipment", createdAt: now, updatedAt: now },
+          // IT Equipment
+          { id: "c0000002-0000-0000-0000-000000000001", assetTypeId: "a0000000-0000-0000-0000-000000000002", name: "Laptop",            createdAt: now, updatedAt: now },
+          { id: "c0000002-0000-0000-0000-000000000002", assetTypeId: "a0000000-0000-0000-0000-000000000002", name: "Desktop Computer",  createdAt: now, updatedAt: now },
+          { id: "c0000002-0000-0000-0000-000000000003", assetTypeId: "a0000000-0000-0000-0000-000000000002", name: "Printer",           createdAt: now, updatedAt: now },
+          { id: "c0000002-0000-0000-0000-000000000004", assetTypeId: "a0000000-0000-0000-0000-000000000002", name: "Scanner",           createdAt: now, updatedAt: now },
+          { id: "c0000002-0000-0000-0000-000000000005", assetTypeId: "a0000000-0000-0000-0000-000000000002", name: "Network Equipment", createdAt: now, updatedAt: now },
+          { id: "c0000002-0000-0000-0000-000000000006", assetTypeId: "a0000000-0000-0000-0000-000000000002", name: "Server",            createdAt: now, updatedAt: now },
+          // Furniture
+          { id: "c0000003-0000-0000-0000-000000000001", assetTypeId: "a0000000-0000-0000-0000-000000000003", name: "Desk",              createdAt: now, updatedAt: now },
+          { id: "c0000003-0000-0000-0000-000000000002", assetTypeId: "a0000000-0000-0000-0000-000000000003", name: "Chair",             createdAt: now, updatedAt: now },
+          { id: "c0000003-0000-0000-0000-000000000003", assetTypeId: "a0000000-0000-0000-0000-000000000003", name: "Cabinet",           createdAt: now, updatedAt: now },
+          { id: "c0000003-0000-0000-0000-000000000004", assetTypeId: "a0000000-0000-0000-0000-000000000003", name: "Shelving",          createdAt: now, updatedAt: now },
+          { id: "c0000003-0000-0000-0000-000000000005", assetTypeId: "a0000000-0000-0000-0000-000000000003", name: "Examination Table", createdAt: now, updatedAt: now },
+          // Office Equipment
+          { id: "c0000004-0000-0000-0000-000000000001", assetTypeId: "a0000000-0000-0000-0000-000000000004", name: "Photocopier",      createdAt: now, updatedAt: now },
+          { id: "c0000004-0000-0000-0000-000000000002", assetTypeId: "a0000000-0000-0000-0000-000000000004", name: "Projector",        createdAt: now, updatedAt: now },
+          { id: "c0000004-0000-0000-0000-000000000003", assetTypeId: "a0000000-0000-0000-0000-000000000004", name: "Whiteboard",       createdAt: now, updatedAt: now },
+          { id: "c0000004-0000-0000-0000-000000000004", assetTypeId: "a0000000-0000-0000-0000-000000000004", name: "Telephone System", createdAt: now, updatedAt: now },
+          // Vehicle
+          { id: "c0000005-0000-0000-0000-000000000001", assetTypeId: "a0000000-0000-0000-0000-000000000005", name: "Ambulance",        createdAt: now, updatedAt: now },
+          { id: "c0000005-0000-0000-0000-000000000002", assetTypeId: "a0000000-0000-0000-0000-000000000005", name: "Staff Vehicle",    createdAt: now, updatedAt: now },
+          { id: "c0000005-0000-0000-0000-000000000003", assetTypeId: "a0000000-0000-0000-0000-000000000005", name: "Delivery Vehicle", createdAt: now, updatedAt: now },
+        ];
+        return tx.table("assetTypes").bulkAdd(TYPES).then(() =>
+          tx.table("assetCategories").bulkAdd(CATS)
+        );
+      });
+    });
   }
 }
 
