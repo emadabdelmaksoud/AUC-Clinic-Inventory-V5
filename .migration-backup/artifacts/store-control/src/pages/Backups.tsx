@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import {
   exportBackup,
   importBackup,
@@ -8,6 +9,8 @@ import {
   type MigrationSummary,
 } from "@/lib/backup";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -18,6 +21,8 @@ import {
 import { toast } from "sonner";
 
 export default function BackupsPage() {
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number } | null>(null);
@@ -41,6 +46,11 @@ export default function BackupsPage() {
         .finally(() => setLoadingSummary(false));
     }
   }, []);
+
+  if (!can(user?.role, "backups", "view")) {
+    navigate("/");
+    return null;
+  }
 
   async function handleExport() {
     setExporting(true);

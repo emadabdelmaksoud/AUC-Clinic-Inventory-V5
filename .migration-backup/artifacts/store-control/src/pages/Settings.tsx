@@ -6,7 +6,8 @@ import { isSupabaseConfigured } from "@/lib/supabase";
 import { usePWAInstall } from "@/hooks/use-pwa-install";
 import { deduplicateProducts } from "@/lib/products";
 import { deduplicateWarehouses } from "@/lib/warehouses";
-import { useAuth } from "@/lib/auth";
+import { useAuth, changeOwnPassword } from "@/lib/auth";
+import { isSuperAdmin, isAdmin } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Settings, Moon, Sun, Download, Smartphone, CheckCircle2,
   Cloud, HardDrive, Clock, Trash2, Loader2, Plus, X, List,
-  Shield, History, RotateCcw, Save,
+  Shield, History, RotateCcw, Save, KeyRound, Eye, EyeOff,
+  UserCircle2, Crown, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -200,6 +202,95 @@ function ListsManagement() {
   );
 }
 
+function ChangePasswordCard({ userId }: { userId: string }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNext, setShowNext] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (next.length < 6) { toast.error("New password must be at least 6 characters"); return; }
+    if (next !== confirm) { toast.error("Passwords do not match"); return; }
+    setSaving(true);
+    try {
+      await changeOwnPassword(userId, current, next);
+      toast.success("Password changed successfully");
+      setCurrent(""); setNext(""); setConfirm("");
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <KeyRound className="w-4 h-4" /> Change My Password
+        </CardTitle>
+        <CardDescription>Update your login password. You must enter your current password to confirm.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Current Password</Label>
+            <div className="relative">
+              <Input
+                type={showCurrent ? "text" : "password"}
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                required
+                className="pr-10"
+                placeholder="Enter current password"
+              />
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowCurrent(v => !v)}>
+                {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>New Password</Label>
+            <div className="relative">
+              <Input
+                type={showNext ? "text" : "password"}
+                value={next}
+                onChange={(e) => setNext(e.target.value)}
+                required
+                minLength={6}
+                className="pr-10"
+                placeholder="At least 6 characters"
+              />
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowNext(v => !v)}>
+                {showNext ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Confirm New Password</Label>
+            <Input
+              type={showNext ? "text" : "password"}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              minLength={6}
+              placeholder="Repeat new password"
+            />
+            {confirm && next !== confirm && (
+              <p className="text-xs text-destructive">Passwords do not match</p>
+            )}
+          </div>
+          <Button type="submit" disabled={saving || (!!confirm && next !== confirm)} className="w-full sm:w-auto">
+            {saving ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Changing…</> : "Change Password"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
 function SecurityCard() {
   const [value, setValue] = useState<string>(() => {
     const v = localStorage.getItem("autoLogoutMinutes");
@@ -371,6 +462,9 @@ function RestorePointsCard() {
 export default function SettingsPage() {
   const qc = useQueryClient();
   const { user } = useAuth();
+  const role = user?.role;
+  const isSuperAdm = isSuperAdmin(role);
+  const isAdminOrAbove = isAdmin(role);
   const { canInstall, isInstalled, promptInstall } = usePWAInstall();
 
   const [darkMode, setDarkMode] = useState(document.documentElement.classList.contains("dark"));
@@ -498,10 +592,10 @@ export default function SettingsPage() {
   async function handleSave() {
     setSaving(true);
     try {
-      await Promise.all([
-        setSetting("orgName", orgName),
-        setSetting("nearExpiryDays", nearExpiryDays),
-      ]);
+      const ops: Promise<void>[] = [];
+      if (isSuperAdm) ops.push(setSetting("orgName", orgName));
+      if (isAdminOrAbove) ops.push(setSetting("nearExpiryDays", nearExpiryDays));
+      await Promise.all(ops);
       toast.success("Settings saved");
       qc.invalidateQueries({ queryKey: ["settings"] });
     } catch (e) {
@@ -519,38 +613,74 @@ export default function SettingsPage() {
         <p className="text-sm text-muted-foreground">Configure your Clinic Inventory app</p>
       </div>
 
-      {/* General */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">General</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Organization / Clinic Name</Label>
-            <Input
-              value={orgName}
-              onChange={(e) => setOrgName(e.target.value)}
-              placeholder="e.g. Main Clinic"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Near-Expiry Warning Days</Label>
-            <Input
-              type="number"
-              min="1"
-              max="365"
-              value={nearExpiryDays}
-              onChange={(e) => setNearExpiryDays(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Products expiring within this many days are flagged as "Near Expiry".
-            </p>
-          </div>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "Save Settings"}
-          </Button>
-        </CardContent>
-      </Card>
+      {/* Profile card — all roles */}
+      {user && (
+        <Card>
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <UserCircle2 className="w-7 h-7 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-base truncate">{user.fullName || user.username}</p>
+                <p className="text-sm text-muted-foreground font-mono truncate">@{user.username}</p>
+              </div>
+              <div className="flex-shrink-0">
+                {user.role === "administrator" ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-purple-100 text-purple-800 border border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800">
+                    <Crown className="w-3 h-3" /> Administrator
+                  </span>
+                ) : user.role === "admin" ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+                    <ShieldCheck className="w-3 h-3" /> Admin
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-muted-foreground border">
+                    Staff
+                  </span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* General — admin and above only */}
+      {isAdminOrAbove && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">General</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isSuperAdm && (
+              <div className="space-y-1.5">
+                <Label>Organization / Clinic Name</Label>
+                <Input
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  placeholder="e.g. Main Clinic"
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>Near-Expiry Warning Days</Label>
+              <Input
+                type="number"
+                min="1"
+                max="365"
+                value={nearExpiryDays}
+                onChange={(e) => setNearExpiryDays(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Products expiring within this many days are flagged as "Near Expiry".
+              </p>
+            </div>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "Save Settings"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Appearance */}
       <Card>
@@ -605,8 +735,8 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Auto Backup */}
-      <Card>
+      {/* Auto Backup — administrator only */}
+      {isSuperAdm && <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
             <Clock className="w-4 h-4" /> Auto Backup
@@ -697,10 +827,10 @@ export default function SettingsPage() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
-      {/* Data Quality */}
-      <Card>
+      {/* Data Quality — admin and above only */}
+      {isAdminOrAbove && <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
             <Trash2 className="w-4 h-4" /> Data Quality
@@ -755,16 +885,19 @@ export default function SettingsPage() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
-      {/* Lists Management — admin/administrator only */}
-      {(user?.role === "admin" || user?.role === "administrator") && <ListsManagement />}
+      {/* Lists Management — administrator only */}
+      {isSuperAdm && <ListsManagement />}
+
+      {/* Change My Password — all roles */}
+      {user && <ChangePasswordCard userId={user.id} />}
 
       {/* Security — auto-logout */}
       <SecurityCard />
 
-      {/* Restore Points — admin/administrator only */}
-      {(user?.role === "admin" || user?.role === "administrator") && <RestorePointsCard />}
+      {/* Restore Points — administrator only */}
+      {isSuperAdm && <RestorePointsCard />}
 
       {/* About */}
       <Card>

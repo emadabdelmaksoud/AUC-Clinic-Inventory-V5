@@ -1,0 +1,164 @@
+You are a senior React, TypeScript, Supabase, PostgreSQL, and Vercel engineer.
+
+Implement a new administrator-only module called:
+
+ASSETS & EQUIPMENT
+
+IMPORTANT REQUIREMENTS
+
+* Do NOT modify the existing Inventory module.
+* Do NOT modify existing Products, Warehouses, Transactions, Reports, Settings, or User Management functionality.
+* Follow the existing application architecture, coding style, folder structure, and design system.
+* Reuse existing components whenever possible.
+* Maintain responsive design.
+* Preserve all existing security and role-based permissions.
+
+ACCESS CONTROL
+
+* Only administrators can access this module.
+* Staff users must not see the menu item.
+* Direct URL access must be blocked for non-admin users.
+
+MAIN MENU
+
+Create a new navigation section:
+
+Assets & Equipment
+
+DATABASE STRUCTURE
+
+Create separate entities/tables:
+
+1. asset_types
+2. asset_categories
+3. assets
+
+Do not reuse inventory tables.
+
+ASSET TYPES
+
+Administrator editable.
+
+Default values:
+
+* Medical Equipment
+* IT Equipment
+* Furniture
+* Office Equipment
+* Vehicle
+* Other
+
+ASSET CATEGORIES
+
+Administrator editable.
+
+Each category belongs to one asset type.
+
+Example:
+
+IT Equipment
+
+* Laptop
+* Desktop Computer
+* Printer
+
+Furniture
+
+* Desk
+* Chair
+* Cabinet
+
+ASSET FIELDS
+
+Create Asset:
+
+* Asset Name (required)
+* Asset Type (required)
+* Category (required)
+* FY Number
+* FA Number
+* CC Number
+* Serial Number
+* Quantity (default 1)
+* Status
+* Custodian Type
+* Custodian Name
+* Notes
+
+STATUS VALUES
+
+* Active
+* In Storage
+* Under Maintenance
+* Lost
+* Disposed
+
+CUSTODIAN TYPE
+
+Two options:
+
+1. System User
+2. External Staff
+
+If System User:
+
+* Select from existing users.
+
+If Other Staff:
+
+* Allow free text entry.
+
+ASSETS PAGE
+
+Features:
+
+* Create Asset
+* Edit Asset
+* Delete Asset
+* View Asset Details
+
+SEARCH
+
+Allow searching by:
+
+* Asset Name
+* Serial Number
+* FY Number
+* FA Number
+* CC Number
+* Custodian Name
+
+FILTERS
+
+* Asset Type
+* Category
+* Status
+
+REPORTS
+
+Add:
+
+1. Full Asset Register
+2. Assets by Type
+3. Assets by Status
+4. Assets by Custodian
+
+EXPORT
+
+Support Excel export using the existing export architecture.
+
+QUALITY REQUIREMENTS
+
+* Use TypeScript types for all entities.
+* Add validation using the project's existing validation approach.
+* Add loading states.
+* Add empty states.
+* Add error handling.
+* Follow existing React Query / data fetching patterns.
+* Follow existing security patterns.
+
+BEFORE MAKING CHANGES
+
+Generate a detailed implementation plan and list all files that will be created or modified.
+
+Do not start coding until the implementation plan is presented.

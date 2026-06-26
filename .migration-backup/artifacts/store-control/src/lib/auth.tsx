@@ -1,5 +1,7 @@
+// @refresh reset
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { db, type User, generateId, now } from "./db";
+import type { AppRole } from "./permissions";
 
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -81,7 +83,37 @@ export function useAuth() {
   return ctx;
 }
 
+const ROLE_PRIORITY: Record<string, number> = {
+  administrator: 3,
+  admin: 2,
+  staff: 1,
+};
+
+async function deduplicateUsernames() {
+  const all = await db.users.toArray();
+  const byUsername = new Map<string, typeof all>();
+  for (const u of all) {
+    const key = u.username.toLowerCase();
+    if (!byUsername.has(key)) byUsername.set(key, []);
+    byUsername.get(key)!.push(u);
+  }
+  for (const [, group] of byUsername) {
+    if (group.length <= 1) continue;
+    group.sort((a, b) => {
+      const pa = ROLE_PRIORITY[a.role] ?? 0;
+      const pb = ROLE_PRIORITY[b.role] ?? 0;
+      if (pb !== pa) return pb - pa;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+    const toDelete = group.slice(1);
+    for (const u of toDelete) {
+      await db.users.delete(u.id);
+    }
+  }
+}
+
 async function ensureDefaultAdmin() {
+  await deduplicateUsernames();
   const count = await db.users.count();
   if (count === 0) {
     const hash = await hashPassword("admin123");
@@ -124,11 +156,32 @@ export async function createUser(input: {
   return user;
 }
 
-export async function updateUserPassword(userId: string, newPassword: string) {
+export async function updateUserPassword(
+  userId: string,
+  newPassword: string,
+  actorRole?: AppRole,
+) {
+  if (actorRole !== undefined && actorRole !== "administrator") {
+    throw new Error("Access denied: Only administrators can reset other users' passwords.");
+  }
   const target = await db.users.get(userId);
   if (target?.role === "administrator") {
     throw new Error("Administrator credentials can only be changed by the Administrator themselves.");
   }
+  const hash = await hashPassword(newPassword);
+  await db.users.update(userId, { passwordHash: hash, updatedAt: now() });
+}
+
+export async function changeOwnPassword(
+  userId: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const target = await db.users.get(userId);
+  if (!target) throw new Error("User not found.");
+  const valid = await verifyPassword(currentPassword, target.passwordHash);
+  if (!valid) throw new Error("Current password is incorrect.");
+  if (newPassword.length < 6) throw new Error("New password must be at least 6 characters.");
   const hash = await hashPassword(newPassword);
   await db.users.update(userId, { passwordHash: hash, updatedAt: now() });
 }
