@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert } from "lucide-react";
+import { Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert, UserCircle } from "lucide-react";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -231,14 +232,18 @@ export default function UsersPage() {
                     <td className="px-4 py-3 hidden md:table-cell text-muted-foreground text-xs">
                       {format(new Date(u.createdAt), "MMM d, yyyy")}
                     </td>
-                    {canManage && (
-                      <td className="px-4 py-3">
-                        {!actorCanManage ? (
-                          <div className="flex justify-end">
-                            <span className="text-xs text-muted-foreground flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Protected</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 justify-end">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <Link href={`/users/${u.id}`}>
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5">
+                            <UserCircle className="w-3 h-3" /> View Profile
+                          </Button>
+                        </Link>
+                        {canManage && !actorCanManage && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Protected</span>
+                        )}
+                        {canManage && actorCanManage && (
+                          <>
                             {u.id !== currentUser?.id && canResetPassword(currentUser?.role) && (
                               <Button
                                 size="sm" variant="outline" className="h-7 text-xs gap-1.5"
@@ -256,10 +261,10 @@ export default function UsersPage() {
                                 <Trash2 className="w-3.5 h-3.5" />
                               </Button>
                             )}
-                          </div>
+                          </>
                         )}
-                      </td>
-                    )}
+                      </div>
+                    </td>
                   </tr>
                 );
               })}

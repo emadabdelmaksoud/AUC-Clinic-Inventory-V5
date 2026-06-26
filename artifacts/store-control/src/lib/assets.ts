@@ -266,11 +266,18 @@ export async function listAssetTransactions(assetId: string): Promise<AssetTrans
 
 // ── Search & Filter ───────────────────────────────────────────────────────────
 
+export async function listAssetTransactionsByUser(userId: string): Promise<AssetTransaction[]> {
+  const txns = await db.assetTransactions.filter(t => t.performedBy === userId).toArray();
+  return txns.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
 export interface AssetFilters {
   search?: string;
   assetTypeId?: string;
   assetCategoryId?: string;
   status?: AssetStatus | "";
+  warehouseId?: string;
+  custodianUserId?: string;
 }
 
 export function filterAssets(assets: Asset[], filters: AssetFilters): Asset[] {
@@ -291,6 +298,8 @@ export function filterAssets(assets: Asset[], filters: AssetFilters): Asset[] {
   if (filters.assetTypeId) result = result.filter(a => a.assetTypeId === filters.assetTypeId);
   if (filters.assetCategoryId) result = result.filter(a => a.assetCategoryId === filters.assetCategoryId);
   if (filters.status) result = result.filter(a => a.status === filters.status);
+  if (filters.warehouseId) result = result.filter(a => a.warehouseId === filters.warehouseId);
+  if (filters.custodianUserId) result = result.filter(a => a.custodianUserId === filters.custodianUserId);
   return result;
 }
 

@@ -14,6 +14,7 @@ import {
 } from "@/lib/assets";
 import { listUsers } from "@/lib/auth";
 import { listWarehouses, listSections } from "@/lib/warehouses";
+import { Link } from "wouter";
 import type { Asset, AssetType, AssetCategory, AssetTransaction } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -779,6 +780,8 @@ export default function AssetsPage() {
   const { data: allAssets = [], isLoading } = useQuery({ queryKey: ["assets"], queryFn: listAssets });
   const { data: types = [] } = useQuery({ queryKey: ["assetTypes"], queryFn: listAssetTypes });
   const { data: categories = [] } = useQuery({ queryKey: ["assetCategories"], queryFn: () => listAssetCategories() });
+  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: listUsers });
+  const { data: warehouses = [] } = useQuery({ queryKey: ["warehouses"], queryFn: () => listWarehouses() });
 
   useEffect(() => {
     seedDefaultAssetTypes().then(() => {
@@ -826,7 +829,7 @@ export default function AssetsPage() {
     e.target.value = "";
   }
 
-  const hasFilters = !!filters.search || !!filters.assetTypeId || !!filters.assetCategoryId || !!filters.status;
+  const hasFilters = !!filters.search || !!filters.assetTypeId || !!filters.assetCategoryId || !!filters.status || !!filters.warehouseId || !!filters.custodianUserId;
 
   return (
     <div className="space-y-4 max-w-6xl">
@@ -892,6 +895,20 @@ export default function AssetsPage() {
                 {Object.entries(ASSET_STATUS_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={filters.warehouseId ?? ""} onValueChange={v => setFilters(f => ({ ...f, warehouseId: v || undefined }))}>
+              <SelectTrigger className="w-40"><SelectValue placeholder="All Locations" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Locations</SelectItem>
+                {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.warehouseName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filters.custodianUserId ?? ""} onValueChange={v => setFilters(f => ({ ...f, custodianUserId: v || undefined }))}>
+              <SelectTrigger className="w-44"><SelectValue placeholder="All Custodians" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Custodians</SelectItem>
+                {users.map(u => <SelectItem key={u.id} value={u.id}>{u.fullName || u.username}</SelectItem>)}
+              </SelectContent>
+            </Select>
             {hasFilters && (
               <Button variant="ghost" size="sm" onClick={() => setFilters({})} className="gap-1.5 text-muted-foreground">
                 <X className="w-3.5 h-3.5" /> Clear
@@ -944,7 +961,13 @@ export default function AssetsPage() {
                       {!asset.fyNumber && !asset.faNumber && !asset.ccNumber && <span>—</span>}
                     </td>
                     <td className="px-4 py-3 hidden xl:table-cell text-sm">
-                      <p>{asset.custodianName || <span className="text-muted-foreground">—</span>}</p>
+                      {asset.custodianUserId && asset.custodianType === "system_user" ? (
+                        <Link href={`/users/${asset.custodianUserId}`} className="font-medium hover:underline text-primary">
+                          {asset.custodianName || "View User"}
+                        </Link>
+                      ) : (
+                        <p>{asset.custodianName || <span className="text-muted-foreground">—</span>}</p>
+                      )}
                       {asset.custodianPhone && <p className="text-xs text-muted-foreground">{asset.custodianPhone}</p>}
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={asset.status} /></td>
