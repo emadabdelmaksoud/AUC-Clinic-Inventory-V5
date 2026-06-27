@@ -302,35 +302,44 @@ export default function UsersPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5 justify-end flex-wrap">
                         <Link href={`/users/${u.id}`}>
-                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5">
-                            <UserCircle className="w-3 h-3" /> View Profile
+                          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 font-medium border-border hover:bg-accent hover:text-accent-foreground shadow-sm">
+                            <UserCircle className="w-3.5 h-3.5" /> View Profile
                           </Button>
                         </Link>
                         {canManage && !actorCanManage && (
-                          <span className="text-xs text-muted-foreground flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Protected</span>
+                          <span className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-md px-2 py-1">
+                            <ShieldAlert className="w-3 h-3" /> Protected
+                          </span>
                         )}
                         {canManage && actorCanManage && u.id !== currentUser?.id && (
                           <>
                             <Button
-                              size="sm" variant="outline"
-                              className={`h-7 text-xs gap-1.5 ${isActive ? "text-amber-600 border-amber-300 hover:bg-amber-50" : "text-green-600 border-green-300 hover:bg-green-50"}`}
+                              size="sm"
+                              className={`h-8 text-xs gap-1.5 font-medium shadow-sm border ${
+                                isActive
+                                  ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-950/50"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-700 dark:hover:bg-emerald-950/50"
+                              }`}
+                              variant="outline"
                               onClick={() => toggleStatus(u)}
                               title={isActive ? "Deactivate user" : "Activate user"}
                             >
-                              {isActive ? <XCircle className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                              {isActive ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                               {isActive ? "Deactivate" : "Activate"}
                             </Button>
                             {canResetPassword(currentUser?.role) && (
                               <Button
-                                size="sm" variant="outline" className="h-7 text-xs gap-1.5"
+                                size="sm" variant="outline"
+                                className="h-8 text-xs gap-1.5 font-medium shadow-sm border-border hover:bg-accent"
                                 onClick={() => setResetPwUser({ id: u.id, name: u.fullName || u.username, role: u.role as AppRole })}
                               >
-                                <Key className="w-3 h-3" /> Reset PW
+                                <Key className="w-3.5 h-3.5" /> Reset PW
                               </Button>
                             )}
                             {isSuperAdmin(currentUser?.role) && (
                               <Button
-                                size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                size="icon" variant="outline"
+                                className="h-8 w-8 text-destructive border-destructive/30 hover:bg-destructive/10 hover:border-destructive/50 shadow-sm"
                                 title="Delete user" onClick={() => setDeleteId(u.id)}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />

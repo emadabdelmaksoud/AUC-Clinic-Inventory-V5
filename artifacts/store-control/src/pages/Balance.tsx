@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Download, Printer, Scale, AlertTriangle, TrendingDown, Filter } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
-import { escapeHtml } from "@/lib/utils";
+import { escapeHtml, sanitizeXlsxCell } from "@/lib/utils";
 
 interface BalanceRow {
   productId: string;
@@ -119,10 +119,10 @@ export default function BalancePage() {
       ["#", "Product Name", "Code", "Category", "Base Unit", "Stock On Hand", "Reorder Level", "Status"],
       ...filtered.map((r, i) => [
         i + 1,
-        r.productName,
-        r.productCode,
-        r.category ?? "",
-        r.baseUnit,
+        sanitizeXlsxCell(r.productName),
+        sanitizeXlsxCell(r.productCode),
+        sanitizeXlsxCell(r.category),
+        sanitizeXlsxCell(r.baseUnit),
         r.onHandBase,
         r.reorderLevel,
         r.isLow ? "LOW STOCK" : r.onHandBase === 0 ? "OUT OF STOCK" : "OK",

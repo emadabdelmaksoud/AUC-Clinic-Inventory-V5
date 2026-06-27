@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { BellRing, Download, Printer, AlertTriangle, Clock, CheckCircle2, Filter, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
-import { escapeHtml } from "@/lib/utils";
+import { escapeHtml, sanitizeXlsxCell } from "@/lib/utils";
 
 type StatusFilter = "all" | "expired" | "near" | "ok";
 
@@ -131,15 +131,15 @@ export default function ExpiryAlertsPage() {
       [],
       ["Product", "Code", "Batch No.", "Expiry Date", "Days Left", "Qty", "Unit", "Warehouse", "Section", "Status"],
       ...filtered.map(r => [
-        r.productName,
-        r.productCode,
-        r.batchNumber ?? "",
-        r.expiryDate,
+        sanitizeXlsxCell(r.productName),
+        sanitizeXlsxCell(r.productCode),
+        sanitizeXlsxCell(r.batchNumber),
+        sanitizeXlsxCell(r.expiryDate),
         r.daysLeft !== null ? r.daysLeft : "",
         r.quantity,
-        r.baseUnit,
-        r.warehouseName,
-        r.sectionName ?? "",
+        sanitizeXlsxCell(r.baseUnit),
+        sanitizeXlsxCell(r.warehouseName),
+        sanitizeXlsxCell(r.sectionName),
         r.status === "expired" ? "EXPIRED" : r.status === "near" ? `EXPIRING SOON (${nearDays}d)` : "OK",
       ]),
     ];

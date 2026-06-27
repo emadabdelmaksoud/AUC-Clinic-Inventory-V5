@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ShoppingCart, Printer, Download, Search, Plus, Trash2, TrendingDown, X } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
-import { escapeHtml } from "@/lib/utils";
+import { escapeHtml, sanitizeXlsxCell } from "@/lib/utils";
 
 interface RequestItem {
   productId: string;
@@ -161,7 +161,7 @@ export default function PurchaseRequestPage() {
       meta.supplierName ? [`Supplier: ${meta.supplierName}`] : [],
       [],
       ["#", "Product Name", "Code", "Category", "Current Stock", "Reorder Level", "Request Qty", "Unit", "Notes"],
-      ...rows.map((r, i) => [i + 1, r.productName, r.productCode, r.category ?? "", r.currentStock, r.reorderLevel, r.requestQty, r.baseUnit, r.notes]),
+      ...rows.map((r, i) => [i + 1, sanitizeXlsxCell(r.productName), sanitizeXlsxCell(r.productCode), sanitizeXlsxCell(r.category), r.currentStock, r.reorderLevel, r.requestQty, sanitizeXlsxCell(r.baseUnit), sanitizeXlsxCell(r.notes)]),
       [],
       meta.notes ? [`General Notes: ${meta.notes}`] : [],
     ].filter(r => r.length > 0);

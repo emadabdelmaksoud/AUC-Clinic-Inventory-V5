@@ -15,7 +15,7 @@ import { Download, Printer, Users, Search, X, Activity, Package, TrendingDown, A
 import { toast } from "sonner";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
-import { escapeHtml } from "@/lib/utils";
+import { escapeHtml, sanitizeXlsxCell } from "@/lib/utils";
 
 const TXN_TYPES: TransactionType[] = [
   "stock_in", "dispensing", "transfer_in", "transfer_out", "disposal", "adjustment", "inventory_count",
@@ -53,7 +53,7 @@ interface StaffRow {
 
 export default function StaffReportPage() {
   const { user } = useAuth();
-  const isAdmin = can(user?.role, "users", "read");
+  const isAdmin = can(user?.role, "users", "view");
 
   const today = new Date().toISOString().slice(0, 10);
   const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
@@ -181,20 +181,20 @@ export default function StaffReportPage() {
       ...filtered.map(r => [
         r.createdAt.slice(0, 10),
         r.createdAt.slice(11, 19),
-        r.performedByName,
-        TRANSACTION_LABELS[r.transactionType] ?? r.transactionType,
-        r.productName,
-        r.productCode,
-        r.category ?? "",
+        sanitizeXlsxCell(r.performedByName),
+        sanitizeXlsxCell(TRANSACTION_LABELS[r.transactionType] ?? r.transactionType),
+        sanitizeXlsxCell(r.productName),
+        sanitizeXlsxCell(r.productCode),
+        sanitizeXlsxCell(r.category),
         r.quantity,
-        r.unitName ?? r.baseUnit,
+        sanitizeXlsxCell(r.unitName ?? r.baseUnit),
         r.quantityBaseUnit,
-        r.baseUnit,
-        r.warehouseName,
-        r.sectionName ?? "",
-        r.batchNumber ?? "",
-        r.expiryDate ?? "",
-        r.notes ?? "",
+        sanitizeXlsxCell(r.baseUnit),
+        sanitizeXlsxCell(r.warehouseName),
+        sanitizeXlsxCell(r.sectionName),
+        sanitizeXlsxCell(r.batchNumber),
+        sanitizeXlsxCell(r.expiryDate),
+        sanitizeXlsxCell(r.notes),
       ]),
       [],
       [`Total Transactions: ${filtered.length}`],

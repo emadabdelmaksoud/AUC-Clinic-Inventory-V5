@@ -18,3 +18,13 @@ export function escapeHtml(str: string | null | undefined): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+/**
+ * Prevents Excel/LibreOffice formula injection by prefixing cells that start
+ * with =, +, -, @, tab, or carriage return with a tab character.
+ */
+export function sanitizeXlsxCell(value: string | null | undefined): string {
+  const s = value ?? "";
+  if (s.match(/^[=+\-@\t\r]/)) return `\t${s}`;
+  return s;
+}

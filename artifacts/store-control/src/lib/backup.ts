@@ -3,17 +3,10 @@ import { isSupabaseConfigured, getSupabaseClient } from "./supabase";
 import * as XLSX from "xlsx";
 import type { TxnRow, StockSummaryRow } from "./reports";
 import { upsertBatch, recordTransaction } from "./inventory";
-
-// ── Excel Formula Injection Prevention ───────────────────────────────────────
-// Cells beginning with =, +, -, @ are treated as formulas by Excel/LibreOffice.
-// Prefix them with a tab character to prevent execution on open.
-function sanitizeXlsxCell(value: string | null | undefined): string {
-  const s = value ?? "";
-  if (s.match(/^[=+\-@\t\r]/)) return `\t${s}`;
-  return s;
-}
+import { sanitizeXlsxCell } from "./utils";
 
 const MAX_BACKUP_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const ALLOWED_JSON_MIME = new Set(["application/json", "text/json", "text/plain", ""]);
 
 export async function exportBackup(): Promise<void> {
   const [products, productUnits, warehouses, sections, batches, transactions, users, auditLogs] = await Promise.all([
@@ -43,6 +36,12 @@ export async function exportBackup(): Promise<void> {
 }
 
 export async function importBackup(file: File): Promise<{ imported: number }> {
+  if (!file.name.toLowerCase().endsWith(".json")) {
+    throw new Error("Invalid file: please select a .json backup file.");
+  }
+  if (!ALLOWED_JSON_MIME.has(file.type)) {
+    throw new Error("Invalid file type: please select a .json backup file.");
+  }
   if (file.size > MAX_BACKUP_FILE_SIZE) {
     throw new Error(`Backup file is too large (max ${Math.round(MAX_BACKUP_FILE_SIZE / 1024 / 1024)} MB).`);
   }
