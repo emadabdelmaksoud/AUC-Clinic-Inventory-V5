@@ -315,7 +315,7 @@ function SecurityCard() {
       </CardHeader>
       <CardContent>
         <div className="flex items-center justify-between gap-4">
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Auto-logout after inactivity</p>
             <p className="text-xs text-muted-foreground">
               {value === "off" ? "Disabled — session stays active until manually signed out." : `Signs out after ${value} minutes of no activity.`}
@@ -749,9 +749,9 @@ export default function SettingsPage() {
           {/* Offline backup */}
           <div className="space-y-3">
             <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-2">
+              <div className="flex items-start gap-2 min-w-0 flex-1">
                 <HardDrive className="w-4 h-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-medium">Offline Backup (JSON file)</p>
                   <p className="text-xs text-muted-foreground">
                     Downloads a backup file to your device automatically.
@@ -786,9 +786,9 @@ export default function SettingsPage() {
           {/* Supabase backup */}
           <div className="space-y-3">
             <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-2">
+              <div className="flex items-start gap-2 min-w-0 flex-1">
                 <Cloud className="w-4 h-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-medium">
                     Supabase Sync
                     {!isSupabaseConfigured && (
@@ -842,7 +842,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between gap-4">
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Duplicate Products</p>
               <p className="text-xs text-muted-foreground">
                 Merges batches & transactions, keeps the oldest product.
@@ -864,7 +864,7 @@ export default function SettingsPage() {
           </div>
           <div className="border-t" />
           <div className="flex items-center justify-between gap-4">
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Duplicate Warehouses</p>
               <p className="text-xs text-muted-foreground">
                 Merges sections & batches, keeps the oldest warehouse.
