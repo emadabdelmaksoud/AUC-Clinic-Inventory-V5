@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   ArrowLeft, Briefcase, Building2, Calendar, CheckCircle2, Clock, Crown,
   Edit2, Eye, EyeOff, KeyRound, Mail, Phone, Save, Upload,
@@ -26,28 +27,221 @@ import { can, canManageUser, isSuperAdmin } from "@/lib/permissions";
 import { StatusBadge } from "./Assets";
 import { toast } from "sonner";
 
-// ── Photo Upload Utility ──────────────────────────────────────────────────────
+// ── Photo Crop Utilities ──────────────────────────────────────────────────────
 
-function resizeImageToBase64(file: File, maxSize = 256): Promise<string> {
+function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.85));
-      };
-      img.onerror = reject;
-      img.src = e.target!.result as string;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+    const r = new FileReader();
+    r.onload = (e) => resolve(e.target!.result as string);
+    r.onerror = reject;
+    r.readAsDataURL(file);
   });
+}
+
+function cropCircleToBase64(
+  src: string,
+  offsetX: number,
+  offsetY: number,
+  scale: number,
+  naturalW: number,
+  naturalH: number,
+  size = 256,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d")!;
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+      ctx.clip();
+      const drawW = naturalW * scale;
+      const drawH = naturalH * scale;
+      const x = size / 2 + offsetX - drawW / 2;
+      const y = size / 2 + offsetY - drawH / 2;
+      ctx.drawImage(img, x, y, drawW, drawH);
+      resolve(canvas.toDataURL("image/jpeg", 0.9));
+    };
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// ── Photo Crop Modal ──────────────────────────────────────────────────────────
+
+const CROP_SIZE = 240;
+
+function PhotoCropModal({
+  src, onApply, onCancel,
+}: { src: string; onApply: (dataUrl: string) => void; onCancel: () => void }) {
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
+  const [applying, setApplying] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null);
+  const pinchRef = useRef<{ dist: number; scale: number } | null>(null);
+
+  const initScale = useCallback((w: number, h: number) => {
+    const fit = Math.max(CROP_SIZE / w, CROP_SIZE / h);
+    setScale(Math.max(fit, 1));
+    setOffset({ x: 0, y: 0 });
+    setNaturalSize({ w, h });
+  }, []);
+
+  const clampOffset = useCallback((ox: number, oy: number, sc: number, nw: number, nh: number) => {
+    const hw = (nw * sc) / 2;
+    const hh = (nh * sc) / 2;
+    const hr = CROP_SIZE / 2;
+    return {
+      x: Math.min(hw - hr, Math.max(-(hw - hr), ox)),
+      y: Math.min(hh - hr, Math.max(-(hh - hr), oy)),
+    };
+  }, []);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, ox: offset.x, oy: offset.y };
+  }, [offset]);
+
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    setOffset(clampOffset(dragRef.current.ox + dx, dragRef.current.oy + dy, scale, naturalSize.w, naturalSize.h));
+  }, [scale, naturalSize, clampOffset]);
+
+  const onMouseUp = useCallback(() => { dragRef.current = null; }, []);
+
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    setScale(prev => {
+      const minS = Math.max(CROP_SIZE / naturalSize.w, CROP_SIZE / naturalSize.h, 0.1);
+      const next = Math.min(Math.max(prev * (1 - e.deltaY * 0.001), minS), 10);
+      setOffset(o => clampOffset(o.x, o.y, next, naturalSize.w, naturalSize.h));
+      return next;
+    });
+  }, [naturalSize, clampOffset]);
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      dragRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, ox: offset.x, oy: offset.y };
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchRef.current = { dist: Math.hypot(dx, dy), scale };
+    }
+  }, [offset, scale]);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length === 1 && dragRef.current) {
+      const dx = e.touches[0].clientX - dragRef.current.startX;
+      const dy = e.touches[0].clientY - dragRef.current.startY;
+      setOffset(clampOffset(dragRef.current.ox + dx, dragRef.current.oy + dy, scale, naturalSize.w, naturalSize.h));
+    } else if (e.touches.length === 2 && pinchRef.current) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const minS = Math.max(CROP_SIZE / naturalSize.w, CROP_SIZE / naturalSize.h, 0.1);
+      const next = Math.min(Math.max(pinchRef.current.scale * (dist / pinchRef.current.dist), minS), 10);
+      setScale(next);
+      setOffset(o => clampOffset(o.x, o.y, next, naturalSize.w, naturalSize.h));
+    }
+  }, [scale, naturalSize, clampOffset]);
+
+  const onTouchEnd = useCallback(() => {
+    dragRef.current = null;
+    pinchRef.current = null;
+  }, []);
+
+  const onSliderChange = useCallback((v: number) => {
+    const minS = naturalSize.w > 0 ? Math.max(CROP_SIZE / naturalSize.w, CROP_SIZE / naturalSize.h, 0.1) : 0.1;
+    const next = minS + (10 - minS) * v;
+    setScale(next);
+    setOffset(o => clampOffset(o.x, o.y, next, naturalSize.w, naturalSize.h));
+  }, [naturalSize, clampOffset]);
+
+  const minS = naturalSize.w > 0 ? Math.max(CROP_SIZE / naturalSize.w, CROP_SIZE / naturalSize.h, 0.1) : 0.1;
+  const sliderVal = naturalSize.w > 0 ? (scale - minS) / (10 - minS) : 0;
+
+  async function apply() {
+    setApplying(true);
+    try {
+      const dataUrl = await cropCircleToBase64(src, offset.x, offset.y, scale, naturalSize.w, naturalSize.h, 256);
+      onApply(dataUrl);
+    } catch {
+      toast.error("Failed to crop image");
+    }
+    setApplying(false);
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Adjust Photo</DialogTitle>
+          <DialogDescription>Drag to reposition · scroll or slider to zoom</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col items-center gap-4 pt-1">
+          {/* Circular crop viewport */}
+          <div
+            className="rounded-full overflow-hidden border-2 border-primary bg-muted select-none cursor-grab active:cursor-grabbing touch-none"
+            style={{ width: CROP_SIZE, height: CROP_SIZE, position: "relative" }}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+            onWheel={onWheel}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          >
+            <img
+              src={src}
+              alt="crop"
+              draggable={false}
+              onLoad={(e) => {
+                const img = e.target as HTMLImageElement;
+                initScale(img.naturalWidth, img.naturalHeight);
+              }}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale})`,
+                transformOrigin: "center",
+                pointerEvents: "none",
+                userSelect: "none",
+                maxWidth: "none",
+              }}
+            />
+          </div>
+
+          {/* Zoom slider */}
+          <div className="flex items-center gap-2 w-full px-2">
+            <span className="text-xs text-muted-foreground select-none">−</span>
+            <input
+              type="range" min={0} max={1} step={0.001}
+              value={sliderVal}
+              onChange={(e) => onSliderChange(parseFloat(e.target.value))}
+              className="flex-1 accent-primary"
+            />
+            <span className="text-xs text-muted-foreground select-none">+</span>
+          </div>
+
+          <div className="flex gap-2 w-full">
+            <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="button" className="flex-1" onClick={apply} disabled={applying || naturalSize.w === 0}>
+              {applying ? "Applying…" : "Apply"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -152,7 +346,7 @@ function EditProfileForm({
   const [department, setDepartment] = useState(profileUser.department || "");
   const [position, setPosition] = useState(profileUser.position || "");
   const [photoUrl, setPhotoUrl] = useState(profileUser.photoUrl || "");
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [role, setRole] = useState<AppRole>(profileUser.role as AppRole);
   const [status, setStatus] = useState<"active" | "inactive">((profileUser.status as "active" | "inactive") || "active");
   const [saving, setSaving] = useState(false);
@@ -214,16 +408,17 @@ function EditProfileForm({
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Profile Photo <span className="text-muted-foreground font-normal">(optional)</span></Label>
             <div className="flex items-center gap-3">
+              {/* Preview circle */}
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden border-2 border-border">
                 {photoUrl ? (
                   <img src={photoUrl} alt="Preview" className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-lg font-bold text-primary">
                     {(() => {
-                      const parts = (profileUser.fullName || profileUser.username).trim().split(/\s+/);
+                      const parts = (fullName || profileUser.username).trim().split(/\s+/);
                       return parts.length >= 2
                         ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-                        : (profileUser.fullName || profileUser.username).slice(0, 2).toUpperCase();
+                        : (fullName || profileUser.username).slice(0, 2).toUpperCase();
                     })()}
                   </span>
                 )}
@@ -235,30 +430,44 @@ function EditProfileForm({
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      setUploadingPhoto(true);
+                      e.target.value = "";
                       try {
-                        const b64 = await resizeImageToBase64(file, 256);
-                        setPhotoUrl(b64);
+                        const src = await readFileAsDataUrl(file);
+                        setCropSrc(src);
                       } catch {
-                        toast.error("Failed to process image");
+                        toast.error("Failed to read image");
                       }
-                      setUploadingPhoto(false);
                     }}
                   />
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 pointer-events-none" disabled={uploadingPhoto}>
-                    <Upload className="w-3.5 h-3.5" /> {uploadingPhoto ? "Processing..." : "Upload Photo"}
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 pointer-events-none">
+                    <Upload className="w-3.5 h-3.5" /> {photoUrl ? "Change Photo" : "Upload Photo"}
                   </Button>
                 </label>
                 {photoUrl && (
-                  <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive text-xs h-7"
-                    onClick={() => setPhotoUrl("")}>
-                    Remove photo
-                  </Button>
+                  <>
+                    <Button type="button" variant="outline" size="sm" className="gap-1.5"
+                      onClick={() => setCropSrc(photoUrl)}>
+                      <Edit2 className="w-3.5 h-3.5" /> Adjust
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive text-xs h-7"
+                      onClick={() => setPhotoUrl("")}>
+                      Remove photo
+                    </Button>
+                  </>
                 )}
-                <p className="text-xs text-muted-foreground">JPG, PNG or WebP. Max 256×256 saved.</p>
+                <p className="text-xs text-muted-foreground">Drag · scroll to zoom · pinch on mobile</p>
               </div>
             </div>
           </div>
+
+          {/* Crop modal */}
+          {cropSrc && (
+            <PhotoCropModal
+              src={cropSrc}
+              onApply={(dataUrl) => { setPhotoUrl(dataUrl); setCropSrc(null); }}
+              onCancel={() => setCropSrc(null)}
+            />
+          )}
         </div>
       </div>
 
