@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useParams, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { listUsers, updateUserProfile, changeOwnPassword, updateUserPassword } from "@/lib/auth";
+import {
+  listUsers, updateUserProfile, changeOwnPassword, updateUserPassword,
+  type UserProfileUpdate,
+} from "@/lib/auth";
 import { listAssetsByUserId, listAssetTransactionsByUser, listAssetTypes, listAssetCategories } from "@/lib/assets";
 import { useAuth } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +14,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Briefcase, Clock, Crown, Edit2, Eye, EyeOff, KeyRound, Save, ShieldCheck, User, X } from "lucide-react";
+import {
+  ArrowLeft, Briefcase, Building2, Calendar, CheckCircle2, Clock, Crown,
+  Edit2, Eye, EyeOff, Image, KeyRound, Mail, Phone, Save,
+  ShieldCheck, User, UserCircle, X, XCircle, Hash, Layers,
+} from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { AppRole } from "@/lib/permissions";
@@ -42,67 +49,101 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 function RoleBadge({ role }: { role: string }) {
-  if (role === "administrator") {
-    return (
-      <Badge className="text-xs gap-1 bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 hover:bg-purple-100">
-        <Crown className="w-3 h-3" /> Administrator
-      </Badge>
-    );
-  }
-  if (role === "admin") {
-    return (
-      <Badge variant="default" className="text-xs gap-1">
-        <ShieldCheck className="w-3 h-3" /> Admin
-      </Badge>
-    );
-  }
+  if (role === "administrator") return (
+    <Badge className="text-xs gap-1 bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 hover:bg-purple-100">
+      <Crown className="w-3 h-3" /> Administrator
+    </Badge>
+  );
+  if (role === "admin") return (
+    <Badge variant="default" className="text-xs gap-1">
+      <ShieldCheck className="w-3 h-3" /> Admin
+    </Badge>
+  );
   return <Badge variant="secondary" className="capitalize text-xs">{role}</Badge>;
 }
 
-function Initials({ name, size = "lg" }: { name: string; size?: "lg" | "xl" }) {
+function StatusBadgeUser({ status }: { status?: string }) {
+  if (!status || status === "active") return (
+    <Badge className="text-xs gap-1 bg-green-100 text-green-800 border-green-200 hover:bg-green-100">
+      <CheckCircle2 className="w-3 h-3" /> Active
+    </Badge>
+  );
+  return (
+    <Badge className="text-xs gap-1 bg-red-100 text-red-800 border-red-200 hover:bg-red-100">
+      <XCircle className="w-3 h-3" /> Inactive
+    </Badge>
+  );
+}
+
+function Avatar({ name, photoUrl, size = "lg" }: { name: string; photoUrl?: string; size?: "lg" | "xl" }) {
   const parts = name.trim().split(/\s+/);
   const letters = parts.length >= 2
     ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     : name.slice(0, 2).toUpperCase();
+  const dim = size === "xl" ? "w-24 h-24 text-3xl" : "w-16 h-16 text-xl";
+  if (photoUrl) return (
+    <img src={photoUrl} alt={name}
+      className={cn(dim, "rounded-full object-cover flex-shrink-0 border-2 border-border")}
+      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+    />
+  );
   return (
-    <div className={cn(
-      "rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold flex-shrink-0",
-      size === "xl" ? "w-20 h-20 text-2xl" : "w-16 h-16 text-xl"
-    )}>
+    <div className={cn(dim, "rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold flex-shrink-0")}>
       {letters}
+    </div>
+  );
+}
+
+function InfoRow({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value?: string | null }) {
+  return (
+    <div className="flex items-start gap-3 py-2.5 border-b last:border-b-0">
+      <Icon className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground font-medium">{label}</p>
+        <p className={cn("text-sm mt-0.5 break-words", !value && "text-muted-foreground italic")}>{value || "Not set"}</p>
+      </div>
     </div>
   );
 }
 
 // ── Edit Profile Form ─────────────────────────────────────────────────────────
 
+type ProfileUser = {
+  id: string; fullName: string; username: string; role: string;
+  status?: string; employeeId?: string; email?: string; department?: string;
+  position?: string; phone?: string; photoUrl?: string;
+};
+
 function EditProfileForm({
-  profileUser,
-  actorRole,
-  isOwnProfile,
-  onClose,
+  profileUser, actorRole, isOwnProfile, onClose,
 }: {
-  profileUser: { id: string; fullName: string; username: string; role: string };
-  actorRole: AppRole;
-  isOwnProfile: boolean;
-  onClose: () => void;
+  profileUser: ProfileUser; actorRole: AppRole; isOwnProfile: boolean; onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [fullName, setFullName] = useState(profileUser.fullName);
+  const [fullName, setFullName] = useState(profileUser.fullName || "");
+  const [employeeId, setEmployeeId] = useState(profileUser.employeeId || "");
+  const [email, setEmail] = useState(profileUser.email || "");
+  const [phone, setPhone] = useState(profileUser.phone || "");
+  const [department, setDepartment] = useState(profileUser.department || "");
+  const [position, setPosition] = useState(profileUser.position || "");
+  const [photoUrl, setPhotoUrl] = useState(profileUser.photoUrl || "");
   const [role, setRole] = useState<AppRole>(profileUser.role as AppRole);
+  const [status, setStatus] = useState<"active" | "inactive">((profileUser.status as "active" | "inactive") || "active");
   const [saving, setSaving] = useState(false);
 
   const canChangeRole = !isOwnProfile && canManageUser(actorRole, profileUser.role as AppRole);
+  const canChangeStatus = can(actorRole, "users", "manage");
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!fullName.trim()) { toast.error("Full name is required"); return; }
     setSaving(true);
     try {
-      const updates: { fullName?: string; role?: AppRole } = {};
-      if (fullName.trim() !== profileUser.fullName) updates.fullName = fullName;
-      if (canChangeRole && role !== profileUser.role) updates.role = role;
-      if (Object.keys(updates).length === 0) { toast.info("No changes to save"); setSaving(false); return; }
+      const updates: UserProfileUpdate = {
+        fullName, employeeId, email, phone, department, position, photoUrl,
+        ...(canChangeStatus ? { status } : {}),
+        ...(canChangeRole ? { role } : {}),
+      };
       await updateUserProfile(profileUser.id, updates, actorRole);
       toast.success("Profile updated");
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -114,35 +155,92 @@ function EditProfileForm({
   }
 
   return (
-    <form onSubmit={handleSave} className="space-y-4">
-      <div className="space-y-1.5">
-        <Label>Full Name *</Label>
-        <Input value={fullName} onChange={(e) => setFullName(e.target.value)} required placeholder="Enter full name" />
+    <form onSubmit={handleSave} className="space-y-5">
+      {/* Personal Information */}
+      <div>
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Personal Information</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label>Full Name *</Label>
+            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} required placeholder="Enter full name" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Employee ID</Label>
+            <Input value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder="e.g. EMP-001" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Email</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="employee@clinic.com" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Phone Number</Label>
+            <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 234 567 8900" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Department</Label>
+            <Input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="e.g. Radiology, ICU" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Position / Job Title</Label>
+            <Input value={position} onChange={(e) => setPosition(e.target.value)} placeholder="e.g. Head Nurse" />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Profile Photo URL <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://..." />
+            {photoUrl && (
+              <div className="flex items-center gap-2 mt-1">
+                <img src={photoUrl} alt="Preview" className="w-10 h-10 rounded-full object-cover border"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                <span className="text-xs text-muted-foreground">Photo preview</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="space-y-1.5">
-        <Label>Username</Label>
-        <Input value={profileUser.username} disabled className="bg-muted/50 text-muted-foreground" />
-        <p className="text-xs text-muted-foreground">Username cannot be changed.</p>
+
+      {/* Account Settings */}
+      <div>
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Account Settings</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label>Username</Label>
+            <Input value={profileUser.username} disabled className="bg-muted/50 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">Username cannot be changed.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Role</Label>
+            {canChangeRole ? (
+              <Select value={role} onValueChange={(v) => setRole(v as AppRole)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {isSuperAdmin(actorRole) && <SelectItem value="administrator">Administrator (Super Admin)</SelectItem>}
+                  <SelectItem value="admin">Admin (full access)</SelectItem>
+                  <SelectItem value="staff">Staff (limited access)</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <>
+                <Input value={profileUser.role} disabled className="bg-muted/50 text-muted-foreground capitalize" />
+                {isOwnProfile && <p className="text-xs text-muted-foreground">You cannot change your own role.</p>}
+              </>
+            )}
+          </div>
+          {canChangeStatus && (
+            <div className="space-y-1.5">
+              <Label>Account Status</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as "active" | "inactive")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
       </div>
-      <div className="space-y-1.5">
-        <Label>Role</Label>
-        {canChangeRole ? (
-          <Select value={role} onValueChange={(v) => setRole(v as AppRole)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {isSuperAdmin(actorRole) && (
-                <SelectItem value="administrator">Administrator (Super Admin)</SelectItem>
-              )}
-              <SelectItem value="admin">Admin (full access)</SelectItem>
-              <SelectItem value="staff">Staff (limited access)</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : (
-          <Input value={profileUser.role} disabled className="bg-muted/50 text-muted-foreground capitalize" />
-        )}
-        {isOwnProfile && <p className="text-xs text-muted-foreground">You cannot change your own role.</p>}
-      </div>
-      <div className="flex justify-end gap-2 pt-1">
+
+      <div className="flex justify-end gap-2 pt-1 border-t">
         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
         <Button type="submit" disabled={saving} className="gap-1.5">
           <Save className="w-3.5 h-3.5" /> {saving ? "Saving..." : "Save Changes"}
@@ -155,24 +253,15 @@ function EditProfileForm({
 // ── Change Password Form ──────────────────────────────────────────────────────
 
 function ChangePasswordForm({
-  profileUser,
-  actorRole,
-  isOwnProfile,
-  onClose,
+  profileUser, actorRole, isOwnProfile, onClose,
 }: {
-  profileUser: { id: string; fullName: string; username: string; role: string };
-  actorRole: AppRole;
-  isOwnProfile: boolean;
-  onClose: () => void;
+  profileUser: ProfileUser; actorRole: AppRole; isOwnProfile: boolean; onClose: () => void;
 }) {
   const [current, setCurrent] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  const canAdminReset = !isOwnProfile && can(actorRole, "users", "manage") &&
-    canManageUser(actorRole, profileUser.role as AppRole);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -186,7 +275,6 @@ function ChangePasswordForm({
         await updateUserPassword(profileUser.id, newPw, actorRole);
       }
       toast.success("Password updated");
-      setCurrent(""); setNewPw(""); setConfirm("");
       onClose();
     } catch (err) {
       toast.error((err as Error).message);
@@ -194,54 +282,44 @@ function ChangePasswordForm({
     setSaving(false);
   }
 
-  if (!isOwnProfile && !canAdminReset) return null;
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {isOwnProfile && (
         <div className="space-y-1.5">
           <Label>Current Password *</Label>
           <div className="relative">
-            <Input
-              type={showPw ? "text" : "password"}
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              required className="pr-10" placeholder="Your current password"
-            />
-            <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPw(v => !v)}>
+            <Input type={showPw ? "text" : "password"} value={current}
+              onChange={(e) => setCurrent(e.target.value)} required className="pr-10" placeholder="Your current password" />
+            <button type="button" onClick={() => setShowPw(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
               {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
         </div>
       )}
-      <div className="space-y-1.5">
-        <Label>New Password *</Label>
-        <div className="relative">
-          <Input
-            type={showPw ? "text" : "password"}
-            value={newPw}
-            onChange={(e) => setNewPw(e.target.value)}
-            required minLength={6} className="pr-10" placeholder="At least 6 characters"
-          />
-          {!isOwnProfile && (
-            <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPw(v => !v)}>
-              {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>New Password *</Label>
+          <div className="relative">
+            <Input type={showPw ? "text" : "password"} value={newPw}
+              onChange={(e) => setNewPw(e.target.value)} required minLength={6} className="pr-10" placeholder="At least 6 characters" />
+            {!isOwnProfile && (
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">Minimum 6 characters.</p>
         </div>
-        <p className="text-xs text-muted-foreground">Minimum 6 characters.</p>
+        <div className="space-y-1.5">
+          <Label>Confirm Password *</Label>
+          <Input type={showPw ? "text" : "password"} value={confirm}
+            onChange={(e) => setConfirm(e.target.value)} required minLength={6} placeholder="Repeat the password" />
+          {confirm && newPw !== confirm && <p className="text-xs text-destructive">Passwords do not match</p>}
+        </div>
       </div>
-      <div className="space-y-1.5">
-        <Label>Confirm Password *</Label>
-        <Input
-          type={showPw ? "text" : "password"}
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          required minLength={6} placeholder="Repeat the password"
-        />
-        {confirm && newPw !== confirm && <p className="text-xs text-destructive">Passwords do not match</p>}
-      </div>
-      <div className="flex justify-end gap-2 pt-1">
+      <div className="flex justify-end gap-2 pt-1 border-t">
         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
         <Button type="submit" disabled={saving || (!!confirm && newPw !== confirm)} className="gap-1.5">
           <KeyRound className="w-3.5 h-3.5" /> {saving ? "Updating..." : "Update Password"}
@@ -259,53 +337,37 @@ export default function UserProfilePage() {
   const { user: currentUser } = useAuth();
   const qc = useQueryClient();
   const [editMode, setEditMode] = useState<"profile" | "password" | null>(null);
+  const [activityFilter, setActivityFilter] = useState<string>("all");
 
-  const { data: allUsers = [], isLoading: loadingUsers } = useQuery({
-    queryKey: ["users"],
-    queryFn: listUsers,
-  });
-
+  const { data: allUsers = [], isLoading: loadingUsers } = useQuery({ queryKey: ["users"], queryFn: listUsers });
   const { data: assets = [], isLoading: loadingAssets } = useQuery({
-    queryKey: ["assetsByUser", userId],
-    queryFn: () => listAssetsByUserId(userId),
-    enabled: !!userId,
+    queryKey: ["assetsByUser", userId], queryFn: () => listAssetsByUserId(userId), enabled: !!userId,
   });
-
   const { data: activity = [], isLoading: loadingActivity } = useQuery({
-    queryKey: ["assetTransactionsByUser", userId],
-    queryFn: () => listAssetTransactionsByUser(userId),
-    enabled: !!userId,
+    queryKey: ["assetTransactionsByUser", userId], queryFn: () => listAssetTransactionsByUser(userId), enabled: !!userId,
   });
-
   const { data: types = [] } = useQuery({ queryKey: ["assetTypes"], queryFn: listAssetTypes });
   const { data: categories = [] } = useQuery({ queryKey: ["assetCategories"], queryFn: () => listAssetCategories() });
 
   const profileUser = allUsers.find(u => u.id === userId);
 
-  if (loadingUsers) {
-    return (
-      <div className="space-y-4 max-w-3xl">
-        <div className="h-8 w-40 bg-muted animate-pulse rounded" />
-        <div className="h-32 bg-muted animate-pulse rounded-xl" />
-      </div>
-    );
-  }
+  if (loadingUsers) return (
+    <div className="space-y-4 max-w-4xl">
+      <div className="h-8 w-40 bg-muted animate-pulse rounded" />
+      <div className="h-48 bg-muted animate-pulse rounded-xl" />
+      <div className="h-32 bg-muted animate-pulse rounded-xl" />
+    </div>
+  );
 
-  if (!profileUser) {
-    return (
-      <div className="max-w-3xl space-y-4">
-        <Link href="/users">
-          <Button variant="ghost" size="sm" className="gap-1.5 -ml-2">
-            <ArrowLeft className="w-4 h-4" /> Back to Users
-          </Button>
-        </Link>
-        <div className="text-center py-16 text-muted-foreground">
-          <User className="w-12 h-12 mx-auto mb-3 opacity-20" />
-          <p className="font-medium">User not found</p>
-        </div>
+  if (!profileUser) return (
+    <div className="max-w-4xl space-y-4">
+      <Link href="/users"><Button variant="ghost" size="sm" className="gap-1.5 -ml-2"><ArrowLeft className="w-4 h-4" /> Back to Users</Button></Link>
+      <div className="text-center py-16 text-muted-foreground">
+        <User className="w-12 h-12 mx-auto mb-3 opacity-20" />
+        <p className="font-medium">User not found</p>
       </div>
-    );
-  }
+    </div>
+  );
 
   const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
   const catMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
@@ -315,33 +377,43 @@ export default function UserProfilePage() {
   const canEditProfile = isCurrentUser || (can(actorRole, "users", "manage") && actorCanManage);
   const canChangePassword = isCurrentUser || (can(actorRole, "users", "manage") && actorCanManage);
   const activeAssets = assets.filter(a => a.status === "active");
+  const transfers = activity.filter(a => a.action === "custody_transferred");
+  const filteredActivity = activityFilter === "all" ? activity : activity.filter(a => a.action === activityFilter);
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-5 max-w-4xl">
       {/* Back */}
-      <Link href="/users">
-        <Button variant="ghost" size="sm" className="gap-1.5 -ml-2">
-          <ArrowLeft className="w-4 h-4" /> Back to Users
-        </Button>
-      </Link>
+      <Link href="/users"><Button variant="ghost" size="sm" className="gap-1.5 -ml-2"><ArrowLeft className="w-4 h-4" /> Back to Users</Button></Link>
 
-      {/* Header card */}
+      {/* ── Header Card ── */}
       <Card>
         <CardContent className="pt-6 pb-5">
-          <div className="flex items-start gap-5">
-            <Initials name={profileUser.fullName || profileUser.username} />
+          <div className="flex items-start gap-5 flex-wrap sm:flex-nowrap">
+            <Avatar name={profileUser.fullName || profileUser.username} photoUrl={profileUser.photoUrl} size="xl" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold">{profileUser.fullName || profileUser.username}</h1>
+                <h1 className="text-2xl font-bold">{profileUser.fullName || profileUser.username}</h1>
                 {isCurrentUser && <Badge variant="outline" className="text-xs">You</Badge>}
+                <StatusBadgeUser status={profileUser.status} />
               </div>
-              <p className="text-sm text-muted-foreground font-mono mt-0.5">@{profileUser.username}</p>
+              {profileUser.position && (
+                <p className="text-sm text-muted-foreground mt-0.5">{profileUser.position}{profileUser.department ? ` · ${profileUser.department}` : ""}</p>
+              )}
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <RoleBadge role={profileUser.role} />
-                <span className="text-xs text-muted-foreground">
-                  Member since {format(new Date(profileUser.createdAt), "MMM d, yyyy")}
+                {profileUser.employeeId && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1"><Hash className="w-3 h-3" />{profileUser.employeeId}</span>
+                )}
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <UserCircle className="w-3 h-3" />@{profileUser.username}
                 </span>
               </div>
+              {(profileUser.email || profileUser.phone) && (
+                <div className="flex gap-4 mt-2 flex-wrap">
+                  {profileUser.email && <span className="text-xs text-muted-foreground flex items-center gap-1"><Mail className="w-3 h-3" />{profileUser.email}</span>}
+                  {profileUser.phone && <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="w-3 h-3" />{profileUser.phone}</span>}
+                </div>
+              )}
             </div>
             {canEditProfile && editMode === null && (
               <div className="flex flex-col gap-1.5 flex-shrink-0">
@@ -359,75 +431,98 @@ export default function UserProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Edit Profile form */}
+      {/* ── Edit Profile Form ── */}
       {editMode === "profile" && canEditProfile && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center justify-between">
               <span className="flex items-center gap-2"><Edit2 className="w-4 h-4" /> Edit Profile</span>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditMode(null)}>
-                <X className="w-4 h-4" />
-              </Button>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditMode(null)}><X className="w-4 h-4" /></Button>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <EditProfileForm
-              profileUser={profileUser}
-              actorRole={actorRole}
-              isOwnProfile={isCurrentUser}
-              onClose={() => { setEditMode(null); qc.invalidateQueries({ queryKey: ["users"] }); }}
-            />
+            <EditProfileForm profileUser={profileUser} actorRole={actorRole} isOwnProfile={isCurrentUser}
+              onClose={() => { setEditMode(null); qc.invalidateQueries({ queryKey: ["users"] }); }} />
           </CardContent>
         </Card>
       )}
 
-      {/* Change Password form */}
+      {/* ── Change Password Form ── */}
       {editMode === "password" && canChangePassword && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center justify-between">
               <span className="flex items-center gap-2"><KeyRound className="w-4 h-4" /> Change Password</span>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditMode(null)}>
-                <X className="w-4 h-4" />
-              </Button>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditMode(null)}><X className="w-4 h-4" /></Button>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ChangePasswordForm
-              profileUser={profileUser}
-              actorRole={actorRole}
-              isOwnProfile={isCurrentUser}
-              onClose={() => setEditMode(null)}
-            />
+            <ChangePasswordForm profileUser={profileUser} actorRole={actorRole} isOwnProfile={isCurrentUser}
+              onClose={() => setEditMode(null)} />
           </CardContent>
         </Card>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "Active Assets", value: activeAssets.length, icon: <Briefcase className="w-5 h-5" />, color: "text-green-600" },
-          { label: "Total Assigned", value: assets.length, icon: <Briefcase className="w-5 h-5" />, color: "text-primary" },
-          { label: "Activity Log", value: activity.length, icon: <Clock className="w-5 h-5" />, color: "text-purple-600" },
-        ].map(stat => (
-          <Card key={stat.label}>
-            <CardContent className="pt-4 pb-4 flex flex-col items-center text-center gap-1">
-              <span className={cn("opacity-60", stat.color)}>{stat.icon}</span>
-              <span className="text-2xl font-bold">{stat.value}</span>
-              <span className="text-xs text-muted-foreground">{stat.label}</span>
-            </CardContent>
-          </Card>
-        ))}
+      {/* ── Info Grid + Stats ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Contact & Account Details */}
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-1">
+            <CardTitle className="text-sm font-semibold">Profile Details</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x">
+              <div className="pr-0 sm:pr-4">
+                <InfoRow icon={Hash} label="Employee ID" value={profileUser.employeeId} />
+                <InfoRow icon={Mail} label="Email" value={profileUser.email} />
+                <InfoRow icon={Phone} label="Phone" value={profileUser.phone} />
+                <InfoRow icon={Building2} label="Department" value={profileUser.department} />
+                <InfoRow icon={Layers} label="Position / Job Title" value={profileUser.position} />
+              </div>
+              <div className="pl-0 sm:pl-4 pt-0">
+                <InfoRow icon={UserCircle} label="Username" value={`@${profileUser.username}`} />
+                <InfoRow icon={ShieldCheck} label="Role" value={profileUser.role.charAt(0).toUpperCase() + profileUser.role.slice(1)} />
+                <InfoRow icon={CheckCircle2} label="Status" value={(profileUser.status || "active").charAt(0).toUpperCase() + (profileUser.status || "active").slice(1)} />
+                <InfoRow icon={Calendar} label="Date Created" value={format(new Date(profileUser.createdAt), "dd MMM yyyy, HH:mm")} />
+                <InfoRow icon={Clock} label="Last Login" value={profileUser.lastLogin ? format(new Date(profileUser.lastLogin), "dd MMM yyyy, HH:mm") : undefined} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Stats */}
+        <div className="flex flex-col gap-3">
+          {[
+            { label: "Active Assets", value: activeAssets.length, icon: <Briefcase className="w-5 h-5" />, color: "text-green-600" },
+            { label: "Total Assigned", value: assets.length, icon: <Briefcase className="w-5 h-5" />, color: "text-primary" },
+            { label: "Transfers", value: transfers.length, icon: <Layers className="w-5 h-5" />, color: "text-purple-600" },
+            { label: "Activity Log", value: activity.length, icon: <Clock className="w-5 h-5" />, color: "text-orange-500" },
+          ].map(stat => (
+            <Card key={stat.label}>
+              <CardContent className="py-3 flex items-center gap-3">
+                <span className={cn("opacity-60", stat.color)}>{stat.icon}</span>
+                <div>
+                  <p className="text-xl font-bold leading-none">{stat.value}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
 
-      {/* Tabs */}
+      {/* ── Tabs ── */}
       <Tabs defaultValue="assets">
         <TabsList className="w-full">
-          <TabsTrigger value="assets" className="flex-1">
+          <TabsTrigger value="assets" className="flex-1 text-xs">
             <Briefcase className="w-3.5 h-3.5 mr-1.5" />
             Current Assets {assets.length > 0 && `(${assets.length})`}
           </TabsTrigger>
-          <TabsTrigger value="activity" className="flex-1">
+          <TabsTrigger value="transfers" className="flex-1 text-xs">
+            <Layers className="w-3.5 h-3.5 mr-1.5" />
+            Asset Transfers {transfers.length > 0 && `(${transfers.length})`}
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="flex-1 text-xs">
             <Clock className="w-3.5 h-3.5 mr-1.5" />
             Activity {activity.length > 0 && `(${activity.length})`}
           </TabsTrigger>
@@ -452,7 +547,7 @@ export default function UserProfilePage() {
                     <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Type / Category</th>
                     <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Ref. Nos.</th>
                     <th className="text-left px-4 py-3 font-medium">Status</th>
-                    <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Assigned</th>
+                    <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Assigned Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -462,7 +557,7 @@ export default function UserProfilePage() {
                         <p className="font-medium">{asset.assetName}</p>
                         {asset.serialNumber && <p className="text-xs text-muted-foreground">S/N: {asset.serialNumber}</p>}
                       </td>
-                      <td className="px-4 py-3 hidden sm:table-cell text-sm">
+                      <td className="px-4 py-3 hidden sm:table-cell">
                         <p>{typeMap[asset.assetTypeId] ?? "—"}</p>
                         {asset.assetCategoryId && <p className="text-xs text-muted-foreground">{catMap[asset.assetCategoryId] ?? ""}</p>}
                       </td>
@@ -472,13 +567,9 @@ export default function UserProfilePage() {
                         {asset.ccNumber && <p>CC: {asset.ccNumber}</p>}
                         {!asset.fyNumber && !asset.faNumber && !asset.ccNumber && <span>—</span>}
                       </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={asset.status} />
-                      </td>
+                      <td className="px-4 py-3"><StatusBadge status={asset.status} /></td>
                       <td className="px-4 py-3 hidden lg:table-cell text-xs text-muted-foreground">
-                        {asset.custodianAssignmentDate
-                          ? format(new Date(asset.custodianAssignmentDate), "dd MMM yyyy")
-                          : "—"}
+                        {asset.custodianAssignmentDate ? format(new Date(asset.custodianAssignmentDate), "dd MMM yyyy") : "—"}
                       </td>
                     </tr>
                   ))}
@@ -488,26 +579,58 @@ export default function UserProfilePage() {
           )}
         </TabsContent>
 
-        {/* ── Activity Log ── */}
-        <TabsContent value="activity" className="mt-4">
-          {loadingActivity ? (
-            <div className="space-y-2">{[...Array(4)].map((_, i) => <div key={i} className="h-14 bg-muted animate-pulse rounded-lg" />)}</div>
-          ) : activity.length === 0 ? (
+        {/* ── Asset Transfers ── */}
+        <TabsContent value="transfers" className="mt-4">
+          {transfers.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              <Clock className="w-10 h-10 mx-auto mb-2 opacity-20" />
-              <p className="text-sm font-medium">No activity recorded yet</p>
-              <p className="text-xs mt-1">Asset actions performed by this user will appear here.</p>
+              <Layers className="w-10 h-10 mx-auto mb-2 opacity-20" />
+              <p className="text-sm font-medium">No custody transfers recorded</p>
+              <p className="text-xs mt-1">Asset transfers involving this user will appear here.</p>
             </div>
           ) : (
             <div className="space-y-2">
-              {activity.map(tx => (
+              {transfers.map(tx => (
+                <div key={tx.id} className="flex gap-3 p-3 rounded-lg border bg-card text-sm">
+                  <Layers className="w-4 h-4 mt-0.5 text-purple-500 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm leading-snug">{tx.summary}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{format(new Date(tx.createdAt), "dd MMM yyyy, HH:mm")}</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs flex-shrink-0 bg-purple-100 text-purple-700 border-purple-200">Custody Transfer</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Activity Log ── */}
+        <TabsContent value="activity" className="mt-4">
+          {/* Filter bar */}
+          {activity.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap mb-3">
+              {["all", "created", "updated", "custody_transferred", "location_changed", "status_changed"].map(f => (
+                <Button key={f} size="sm" variant={activityFilter === f ? "default" : "outline"}
+                  className="h-7 text-xs" onClick={() => setActivityFilter(f)}>
+                  {f === "all" ? "All" : ACTION_LABELS[f] ?? f}
+                </Button>
+              ))}
+            </div>
+          )}
+          {loadingActivity ? (
+            <div className="space-y-2">{[...Array(4)].map((_, i) => <div key={i} className="h-14 bg-muted animate-pulse rounded-lg" />)}</div>
+          ) : filteredActivity.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Clock className="w-10 h-10 mx-auto mb-2 opacity-20" />
+              <p className="text-sm font-medium">{activity.length === 0 ? "No activity recorded yet" : "No matching activity"}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredActivity.map(tx => (
                 <div key={tx.id} className="flex gap-3 p-3 rounded-lg border bg-card text-sm">
                   <Clock className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm leading-snug">{tx.summary}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {format(new Date(tx.createdAt), "dd MMM yyyy, HH:mm")}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{format(new Date(tx.createdAt), "dd MMM yyyy, HH:mm")}</p>
                   </div>
                   <Badge variant="outline" className={cn("text-xs flex-shrink-0", ACTION_COLORS[tx.action] ?? "")}>
                     {ACTION_LABELS[tx.action] ?? tx.action}

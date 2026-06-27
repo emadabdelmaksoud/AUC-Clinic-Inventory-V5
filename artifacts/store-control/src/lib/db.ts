@@ -8,6 +8,14 @@ export interface User {
   fullName: string;
   passwordHash: string;
   role: "administrator" | "admin" | "staff";
+  status?: "active" | "inactive";
+  employeeId?: string;
+  email?: string;
+  department?: string;
+  position?: string;
+  phone?: string;
+  photoUrl?: string;
+  lastLogin?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -261,6 +269,9 @@ export class StoreControlDB extends Dexie {
     this.version(4).stores({
       assets: "id, assetTypeId, assetCategoryId, status, custodianUserId, warehouseId, sectionId, createdAt",
       assetTransactions: "id, assetId, action, performedBy, createdAt",
+    });
+    this.version(5).stores({
+      users: "id, username, role, status, employeeId, department",
     });
   }
 }
