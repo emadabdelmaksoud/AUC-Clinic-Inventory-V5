@@ -1,6 +1,6 @@
 kind = "web"
-previewPath = "/"
-title = "AUC Clinic Inventory"
+previewPath = "/mb-store-control/"
+title = "AUC Clinic Inventory (Backup)"
 version = "1.0.0"
 id = "artifacts/store-control"
 router = "path"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/" ]
+paths = [ "/mb-store-control/" ]
 localPort = 25373
 
 [services.development]
