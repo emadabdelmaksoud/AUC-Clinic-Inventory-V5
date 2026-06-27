@@ -21,6 +21,7 @@ interface AuthCtx {
   loading: boolean;
   signIn: (username: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthCtx | undefined>(undefined);
@@ -59,7 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!dbUser) return { error: "Invalid username or password" };
     const valid = await verifyPassword(password, dbUser.passwordHash);
     if (!valid) return { error: "Invalid username or password" };
-    const { passwordHash: _ph, ...safeUser } = dbUser;
+    const lastLogin = now();
+    try { await db.users.update(dbUser.id, { lastLogin, updatedAt: lastLogin }); } catch { /* best effort */ }
+    const { passwordHash: _ph, ...safeUser } = { ...dbUser, lastLogin };
     setUser(safeUser);
     localStorage.setItem(SESSION_KEY, JSON.stringify({ id: dbUser.id }));
     return { error: null };
@@ -70,8 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(SESSION_KEY);
   };
 
+  const refreshUser = async () => {
+    if (!user) return;
+    const dbUser = await db.users.get(user.id);
+    if (dbUser) {
+      const { passwordHash: _ph, ...safeUser } = dbUser;
+      setUser(safeUser);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
@@ -189,6 +201,48 @@ export async function changeOwnPassword(
 export async function listUsers(): Promise<Omit<User, "passwordHash">[]> {
   const users = await db.users.toArray();
   return users.map(({ passwordHash: _ph, ...u }) => u);
+}
+
+export interface UserProfileUpdate {
+  fullName?: string;
+  role?: AppRole;
+  status?: "active" | "inactive";
+  employeeId?: string;
+  email?: string;
+  department?: string;
+  position?: string;
+  phone?: string;
+  photoUrl?: string;
+}
+
+export async function updateUserProfile(
+  userId: string,
+  updates: UserProfileUpdate,
+  actorRole?: AppRole,
+): Promise<void> {
+  const target = await db.users.get(userId);
+  if (!target) throw new Error("User not found.");
+  if (updates.role !== undefined && updates.role !== target.role) {
+    if (actorRole !== "administrator" && actorRole !== "admin") {
+      throw new Error("Access denied: You cannot change roles.");
+    }
+    if (target.role === "administrator" || updates.role === "administrator") {
+      if (actorRole !== "administrator") {
+        throw new Error("Only the Administrator can assign or remove the Administrator role.");
+      }
+    }
+  }
+  const patch: Partial<User> = { updatedAt: now() };
+  if (updates.fullName !== undefined) patch.fullName = updates.fullName.trim();
+  if (updates.role !== undefined) patch.role = updates.role as AppRole;
+  if (updates.status !== undefined) patch.status = updates.status;
+  if (updates.employeeId !== undefined) patch.employeeId = updates.employeeId.trim() || undefined;
+  if (updates.email !== undefined) patch.email = updates.email.trim() || undefined;
+  if (updates.department !== undefined) patch.department = updates.department.trim() || undefined;
+  if (updates.position !== undefined) patch.position = updates.position.trim() || undefined;
+  if (updates.phone !== undefined) patch.phone = updates.phone.trim() || undefined;
+  if (updates.photoUrl !== undefined) patch.photoUrl = updates.photoUrl.trim() || undefined;
+  await db.users.update(userId, patch);
 }
 
 export async function deleteUser(id: string) {
