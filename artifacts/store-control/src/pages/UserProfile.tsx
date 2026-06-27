@@ -676,7 +676,7 @@ export default function UserProfilePage() {
                   </div>
                 </div>
                 {canEditProfile && editMode === null && (
-                  <div className="flex sm:flex-col gap-2 sm:gap-1.5 flex-shrink-0">
+                  <div className="flex flex-col gap-1.5 flex-shrink-0">
                     <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs whitespace-nowrap" onClick={() => setEditMode("profile")}>
                       <Edit2 className="w-3.5 h-3.5" /> Edit Profile
                     </Button>
