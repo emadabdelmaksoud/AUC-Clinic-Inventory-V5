@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft, Briefcase, Building2, Calendar, CheckCircle2, Clock, Crown,
-  Edit2, Eye, EyeOff, Image, KeyRound, Mail, Phone, Save,
+  Edit2, Eye, EyeOff, KeyRound, Mail, Phone, Save, Upload,
   ShieldCheck, User, UserCircle, X, XCircle, Hash, Layers,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -25,6 +25,30 @@ import type { AppRole } from "@/lib/permissions";
 import { can, canManageUser, isSuperAdmin } from "@/lib/permissions";
 import { StatusBadge } from "./Assets";
 import { toast } from "sonner";
+
+// ── Photo Upload Utility ──────────────────────────────────────────────────────
+
+function resizeImageToBase64(file: File, maxSize = 256): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = reject;
+      img.src = e.target!.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -120,6 +144,7 @@ function EditProfileForm({
   profileUser: ProfileUser; actorRole: AppRole; isOwnProfile: boolean; onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const { refreshUser } = useAuth();
   const [fullName, setFullName] = useState(profileUser.fullName || "");
   const [employeeId, setEmployeeId] = useState(profileUser.employeeId || "");
   const [email, setEmail] = useState(profileUser.email || "");
@@ -127,6 +152,7 @@ function EditProfileForm({
   const [department, setDepartment] = useState(profileUser.department || "");
   const [position, setPosition] = useState(profileUser.position || "");
   const [photoUrl, setPhotoUrl] = useState(profileUser.photoUrl || "");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [role, setRole] = useState<AppRole>(profileUser.role as AppRole);
   const [status, setStatus] = useState<"active" | "inactive">((profileUser.status as "active" | "inactive") || "active");
   const [saving, setSaving] = useState(false);
@@ -147,6 +173,7 @@ function EditProfileForm({
       await updateUserProfile(profileUser.id, updates, actorRole);
       toast.success("Profile updated");
       qc.invalidateQueries({ queryKey: ["users"] });
+      if (isOwnProfile) await refreshUser();
       onClose();
     } catch (err) {
       toast.error((err as Error).message);
@@ -185,15 +212,52 @@ function EditProfileForm({
             <Input value={position} onChange={(e) => setPosition(e.target.value)} placeholder="e.g. Head Nurse" />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label>Profile Photo URL <span className="text-muted-foreground font-normal">(optional)</span></Label>
-            <Input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://..." />
-            {photoUrl && (
-              <div className="flex items-center gap-2 mt-1">
-                <img src={photoUrl} alt="Preview" className="w-10 h-10 rounded-full object-cover border"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                <span className="text-xs text-muted-foreground">Photo preview</span>
+            <Label>Profile Photo <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <div className="flex items-center gap-3">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden border-2 border-border">
+                {photoUrl ? (
+                  <img src={photoUrl} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-lg font-bold text-primary">
+                    {(() => {
+                      const parts = (profileUser.fullName || profileUser.username).trim().split(/\s+/);
+                      return parts.length >= 2
+                        ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+                        : (profileUser.fullName || profileUser.username).slice(0, 2).toUpperCase();
+                    })()}
+                  </span>
+                )}
               </div>
-            )}
+              <div className="flex flex-col gap-1.5">
+                <label className="cursor-pointer">
+                  <input
+                    type="file" accept="image/*" className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setUploadingPhoto(true);
+                      try {
+                        const b64 = await resizeImageToBase64(file, 256);
+                        setPhotoUrl(b64);
+                      } catch {
+                        toast.error("Failed to process image");
+                      }
+                      setUploadingPhoto(false);
+                    }}
+                  />
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 pointer-events-none" disabled={uploadingPhoto}>
+                    <Upload className="w-3.5 h-3.5" /> {uploadingPhoto ? "Processing..." : "Upload Photo"}
+                  </Button>
+                </label>
+                {photoUrl && (
+                  <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive text-xs h-7"
+                    onClick={() => setPhotoUrl("")}>
+                    Remove photo
+                  </Button>
+                )}
+                <p className="text-xs text-muted-foreground">JPG, PNG or WebP. Max 256×256 saved.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

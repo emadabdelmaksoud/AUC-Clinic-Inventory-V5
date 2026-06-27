@@ -21,6 +21,7 @@ interface AuthCtx {
   loading: boolean;
   signIn: (username: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthCtx | undefined>(undefined);
@@ -72,8 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(SESSION_KEY);
   };
 
+  const refreshUser = async () => {
+    if (!user) return;
+    const dbUser = await db.users.get(user.id);
+    if (dbUser) {
+      const { passwordHash: _ph, ...safeUser } = dbUser;
+      setUser(safeUser);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

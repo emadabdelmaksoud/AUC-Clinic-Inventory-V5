@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listUsers, createUser, deleteUser, updateUserPassword } from "@/lib/auth";
+import { listUsers, createUser, deleteUser, updateUserPassword, updateUserProfile } from "@/lib/auth";
 import { useAuth } from "@/lib/auth";
 import { can, canManageUser, canResetPassword, isSuperAdmin } from "@/lib/permissions";
 import type { AppRole } from "@/lib/permissions";
@@ -12,10 +12,27 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert, UserCircle } from "lucide-react";
+import { CheckCircle2, Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert, UserCircle, XCircle } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
+
+function UserAvatar({ name, photoUrl, size = 8 }: { name: string; photoUrl?: string; size?: number }) {
+  const parts = (name || "?").trim().split(/\s+/);
+  const letters = parts.length >= 2
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : (name || "?").slice(0, 2).toUpperCase();
+  const dim = `w-${size} h-${size}`;
+  if (photoUrl) return (
+    <img src={photoUrl} alt={name}
+      className={`${dim} rounded-full object-cover flex-shrink-0 border border-border`} />
+  );
+  return (
+    <div className={`${dim} rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold flex-shrink-0`}>
+      {letters}
+    </div>
+  );
+}
 
 function RoleBadge({ role }: { role: AppRole }) {
   if (role === "administrator") {
@@ -174,6 +191,7 @@ export default function UsersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [resetPwUser, setResetPwUser] = useState<{ id: string; name: string; role: AppRole } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
   const { data: users = [], isLoading } = useQuery({ queryKey: ["users"], queryFn: listUsers });
 
@@ -189,12 +207,30 @@ export default function UsersPage() {
 
   const canManage = can(currentUser?.role, "users", "manage");
 
+  const filtered = users.filter(u => {
+    if (statusFilter === "all") return true;
+    const s = u.status || "active";
+    return s === statusFilter;
+  });
+
+  async function toggleStatus(u: typeof users[0]) {
+    if (!canManage || !canManageUser(currentUser?.role, u.role as AppRole)) return;
+    const newStatus = (u.status || "active") === "active" ? "inactive" : "active";
+    try {
+      await updateUserProfile(u.id, { status: newStatus }, currentUser?.role as AppRole);
+      toast.success(`${u.fullName || u.username} set to ${newStatus}`);
+      qc.invalidateQueries({ queryKey: ["users"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Users className="w-6 h-6" /> Users</h1>
-          <p className="text-sm text-muted-foreground">{users.length} user{users.length !== 1 ? "s" : ""}</p>
+          <p className="text-sm text-muted-foreground">{filtered.length} of {users.length} user{users.length !== 1 ? "s" : ""}</p>
         </div>
         {canManage && (
           <Button onClick={() => setShowCreate(true)}>
@@ -203,37 +239,68 @@ export default function UsersPage() {
         )}
       </div>
 
+      {/* Status filter */}
+      <div className="flex gap-1.5">
+        {(["all", "active", "inactive"] as const).map(f => (
+          <Button key={f} size="sm" variant={statusFilter === f ? "default" : "outline"}
+            className="h-7 text-xs capitalize gap-1.5" onClick={() => setStatusFilter(f)}>
+            {f === "active" && <CheckCircle2 className="w-3 h-3" />}
+            {f === "inactive" && <XCircle className="w-3 h-3" />}
+            {f === "all" ? `All (${users.length})` : `${f.charAt(0).toUpperCase() + f.slice(1)} (${users.filter(u => (u.status || "active") === f).length})`}
+          </Button>
+        ))}
+      </div>
+
       {isLoading ? (
         <div className="space-y-2">{[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />)}</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground border rounded-lg bg-card">
+          <Users className="w-10 h-10 mx-auto mb-2 opacity-20" />
+          <p className="text-sm font-medium">No {statusFilter !== "all" ? statusFilter : ""} users found</p>
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border bg-card">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="text-left px-4 py-3 font-medium">User</th>
-                <th className="text-left px-4 py-3 font-medium">Username</th>
+                <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Username</th>
                 <th className="text-left px-4 py-3 font-medium">Role</th>
-                <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Created</th>
+                <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Status</th>
+                <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Created</th>
                 <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {users.map((u) => {
+              {filtered.map((u) => {
                 const isProtected = u.role === "administrator";
                 const actorCanManage = canManageUser(currentUser?.role, u.role);
+                const isActive = (u.status || "active") === "active";
                 return (
-                  <tr key={u.id} className={`hover:bg-muted/30 ${isProtected ? "bg-purple-50/40 dark:bg-purple-950/10" : ""}`}>
+                  <tr key={u.id} className={`hover:bg-muted/30 ${!isActive ? "opacity-60" : ""} ${isProtected ? "bg-purple-50/40 dark:bg-purple-950/10" : ""}`}>
                     <td className="px-4 py-3">
-                      <div className="font-medium">{u.fullName}</div>
-                      {u.id === currentUser?.id && <span className="text-xs text-primary">(You)</span>}
+                      <div className="flex items-center gap-2.5">
+                        <UserAvatar name={u.fullName || u.username} photoUrl={u.photoUrl} size={8} />
+                        <div>
+                          <div className="font-medium leading-tight">{u.fullName}</div>
+                          {u.department && <div className="text-xs text-muted-foreground">{u.department}{u.position ? ` · ${u.position}` : ""}</div>}
+                          {u.id === currentUser?.id && <span className="text-xs text-primary">(You)</span>}
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{u.username}</td>
+                    <td className="px-4 py-3 hidden sm:table-cell font-mono text-xs text-muted-foreground">{u.username}</td>
                     <td className="px-4 py-3"><RoleBadge role={u.role as AppRole} /></td>
-                    <td className="px-4 py-3 hidden md:table-cell text-muted-foreground text-xs">
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      {isActive
+                        ? <Badge className="text-xs gap-1 bg-green-100 text-green-800 border-green-200 hover:bg-green-100"><CheckCircle2 className="w-3 h-3" /> Active</Badge>
+                        : <Badge className="text-xs gap-1 bg-red-100 text-red-800 border-red-200 hover:bg-red-100"><XCircle className="w-3 h-3" /> Inactive</Badge>
+                      }
+                    </td>
+                    <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground text-xs">
                       {format(new Date(u.createdAt), "MMM d, yyyy")}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5 justify-end">
+                      <div className="flex items-center gap-1.5 justify-end flex-wrap">
                         <Link href={`/users/${u.id}`}>
                           <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5">
                             <UserCircle className="w-3 h-3" /> View Profile
@@ -242,21 +309,29 @@ export default function UsersPage() {
                         {canManage && !actorCanManage && (
                           <span className="text-xs text-muted-foreground flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Protected</span>
                         )}
-                        {canManage && actorCanManage && (
+                        {canManage && actorCanManage && u.id !== currentUser?.id && (
                           <>
-                            {u.id !== currentUser?.id && canResetPassword(currentUser?.role) && (
+                            <Button
+                              size="sm" variant="outline"
+                              className={`h-7 text-xs gap-1.5 ${isActive ? "text-amber-600 border-amber-300 hover:bg-amber-50" : "text-green-600 border-green-300 hover:bg-green-50"}`}
+                              onClick={() => toggleStatus(u)}
+                              title={isActive ? "Deactivate user" : "Activate user"}
+                            >
+                              {isActive ? <XCircle className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                              {isActive ? "Deactivate" : "Activate"}
+                            </Button>
+                            {canResetPassword(currentUser?.role) && (
                               <Button
                                 size="sm" variant="outline" className="h-7 text-xs gap-1.5"
                                 onClick={() => setResetPwUser({ id: u.id, name: u.fullName || u.username, role: u.role as AppRole })}
                               >
-                                <Key className="w-3 h-3" /> Reset Password
+                                <Key className="w-3 h-3" /> Reset PW
                               </Button>
                             )}
-                            {u.id !== currentUser?.id && isSuperAdmin(currentUser?.role) && (
+                            {isSuperAdmin(currentUser?.role) && (
                               <Button
                                 size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                                title="Delete user"
-                                onClick={() => setDeleteId(u.id)}
+                                title="Delete user" onClick={() => setDeleteId(u.id)}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </Button>
