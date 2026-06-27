@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "ds31XrSsFuNHAaurGLHi7"
+uri = "file://AUC_Clinic_Inventory_Database_Setup_Guide.txt"
+type = "text"
+title = "Database Setup & Data Import Guide"
