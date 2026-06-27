@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Box, Warehouse, BarChart3, FileUp,
   Users, QrCode, ClipboardList, HardDrive, Settings, LogOut, Menu, X,
   Scale, ClipboardEdit, BellRing, ShoppingCart, ChevronDown,
-  PackageSearch, FolderOpen, BarChart2, ShieldCheck, Briefcase, Shield,
+  PackageSearch, FolderOpen, BarChart2, ShieldCheck, Briefcase, Shield, UserCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
