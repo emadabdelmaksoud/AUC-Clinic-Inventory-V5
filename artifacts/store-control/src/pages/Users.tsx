@@ -61,7 +61,7 @@ function AccessDeniedNote() {
   );
 }
 
-function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole: AppRole }) {
+function CreateUserForm({ onClose, actorRole, actorId }: { onClose: () => void; actorRole: AppRole; actorId?: string }) {
   const qc = useQueryClient();
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
@@ -78,7 +78,7 @@ function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole
     }
     setSaving(true);
     try {
-      await createUser({ username, fullName, password, role });
+      await createUser({ username, fullName, password, role }, actorId);
       toast.success("User created");
       qc.invalidateQueries({ queryKey: ["users"] });
       onClose();
@@ -134,7 +134,7 @@ function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole
   );
 }
 
-function ResetPasswordForm({ userId, userName, actorRole, onClose }: { userId: string; userName: string; actorRole: AppRole; onClose: () => void }) {
+function ResetPasswordForm({ userId, userName, actorRole, actorId, onClose }: { userId: string; userName: string; actorRole: AppRole; actorId?: string; onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -146,7 +146,7 @@ function ResetPasswordForm({ userId, userName, actorRole, onClose }: { userId: s
     if (password !== confirm) { toast.error("Passwords do not match"); return; }
     setSaving(true);
     try {
-      await updateUserPassword(userId, password, actorRole);
+      await updateUserPassword(userId, password, actorRole, actorId);
       toast.success(`Password reset for ${userName}`);
       onClose();
     } catch (err) {
@@ -196,7 +196,7 @@ export default function UsersPage() {
   const { data: users = [], isLoading } = useQuery({ queryKey: ["users"], queryFn: listUsers });
 
   const { mutate: doDelete } = useMutation({
-    mutationFn: (id: string) => deleteUser(id),
+    mutationFn: (id: string) => deleteUser(id, currentUser?.id),
     onSuccess: () => {
       toast.success("User deleted");
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -354,7 +354,7 @@ export default function UsersPage() {
             <DialogTitle>Create User</DialogTitle>
             <DialogDescription>Add a new staff member or admin account.</DialogDescription>
           </DialogHeader>
-          <CreateUserForm onClose={() => setShowCreate(false)} actorRole={currentUser?.role as AppRole} />
+          <CreateUserForm onClose={() => setShowCreate(false)} actorRole={currentUser?.role as AppRole} actorId={currentUser?.id} />
         </DialogContent>
       </Dialog>
 
@@ -367,7 +367,7 @@ export default function UsersPage() {
           {resetPwUser && resetPwUser.role === "administrator" && !isSuperAdmin(currentUser?.role) ? (
             <AccessDeniedNote />
           ) : resetPwUser ? (
-            <ResetPasswordForm userId={resetPwUser.id} userName={resetPwUser.name} actorRole={currentUser?.role as AppRole} onClose={() => setResetPwUser(null)} />
+            <ResetPasswordForm userId={resetPwUser.id} userName={resetPwUser.name} actorRole={currentUser?.role as AppRole} actorId={currentUser?.id} onClose={() => setResetPwUser(null)} />
           ) : null}
         </DialogContent>
       </Dialog>

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Download, Printer, Scale, AlertTriangle, TrendingDown, Filter } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { escapeHtml } from "@/lib/utils";
 
 interface BalanceRow {
   productId: string;
@@ -143,10 +144,10 @@ export default function BalancePage() {
     const rows_html = filtered.map((r, i) => `
       <tr style="${r.isLow ? "background:#fff7ed" : r.onHandBase === 0 ? "background:#fef2f2" : ""}">
         <td>${i + 1}</td>
-        <td style="font-weight:500">${r.productName}</td>
-        <td style="font-family:monospace;font-size:11px">${r.productCode}</td>
-        <td>${r.category ?? ""}</td>
-        <td>${r.baseUnit}</td>
+        <td style="font-weight:500">${escapeHtml(r.productName)}</td>
+        <td style="font-family:monospace;font-size:11px">${escapeHtml(r.productCode)}</td>
+        <td>${escapeHtml(r.category)}</td>
+        <td>${escapeHtml(r.baseUnit)}</td>
         <td style="font-weight:600;text-align:right">${r.onHandBase.toLocaleString()}</td>
         <td style="text-align:right">${r.reorderLevel}</td>
         <td style="text-align:center;font-size:11px;font-weight:600;color:${r.onHandBase === 0 ? "#dc2626" : r.isLow ? "#ea580c" : "#16a34a"}">${r.onHandBase === 0 ? "OUT OF STOCK" : r.isLow ? "LOW" : "OK"}</td>
@@ -167,7 +168,7 @@ export default function BalancePage() {
   @media print { @page { size: A4 landscape; margin: 15mm; } }
 </style></head><body>
 <h2>AUC Clinic Inventory — Balance Report</h2>
-<div class="meta">Date: ${new Date().toLocaleDateString()} &nbsp;|&nbsp; Location: ${warehouseName}${sectionName ? ` / ${sectionName}` : ""} &nbsp;|&nbsp; Total Products: ${filtered.length}</div>
+<div class="meta">Date: ${new Date().toLocaleDateString()} &nbsp;|&nbsp; Location: ${escapeHtml(warehouseName)}${sectionName ? ` / ${escapeHtml(sectionName)}` : ""} &nbsp;|&nbsp; Total Products: ${filtered.length}</div>
 <table>
 <thead><tr><th>#</th><th>Product Name</th><th>Code</th><th>Category</th><th>Unit</th><th style="text-align:right">Stock</th><th style="text-align:right">Reorder</th><th style="text-align:center">Status</th></tr></thead>
 <tbody>${rows_html}</tbody>

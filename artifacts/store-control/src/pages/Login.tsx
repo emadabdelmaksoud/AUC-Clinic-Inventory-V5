@@ -3,10 +3,8 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle } from "lucide-react";
-
-const EVER_LOGGED_IN_KEY = "clinic_inventory_ever_logged_in";
 
 export default function LoginPage() {
   const { signIn } = useAuth();
@@ -14,16 +12,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const showAdminHint = !localStorage.getItem(EVER_LOGGED_IN_KEY);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
     const { error: err } = await signIn(username, password);
-    if (!err) {
-      localStorage.setItem(EVER_LOGGED_IN_KEY, "1");
-    } else {
+    if (err) {
       setError(err);
     }
     setLoading(false);
@@ -43,9 +38,6 @@ export default function LoginPage() {
         <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-lg">Sign in</CardTitle>
-            {showAdminHint && (
-              <CardDescription>Default admin: <span className="font-mono text-xs">admin / admin123</span></CardDescription>
-            )}
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">

@@ -1,20 +1,74 @@
 // @refresh reset
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { db, type User, generateId, now } from "./db";
+import { addAuditLog } from "./audit";
 import type { AppRole } from "./permissions";
 
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+// ── Password Hashing (PBKDF2-SHA256 with random salt) ────────────────────────
+// Uses the Web Crypto API — no extra dependencies required.
+// Stored format: "pbkdf2v1:<16-byte-salt-hex>:<32-byte-hash-hex>"
+// Legacy format: plain 64-char SHA-256 hex (no prefix) — migrated on first login.
+
+const PBKDF2_ITERATIONS = 100_000;
+const SALT_BYTES = 16;
+
+function hexEncode(buf: ArrayBuffer | Uint8Array): string {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const inputHash = await hashPassword(password);
-  return inputHash === hash;
+function hexDecode(hex: string): Uint8Array {
+  const result = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    result[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  }
+  return result;
 }
+
+async function pbkdf2Derive(password: string, salt: Uint8Array): Promise<string> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw", enc.encode(password), "PBKDF2", false, ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { name: "PBKDF2", salt: salt as any, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    keyMaterial, 256,
+  );
+  return hexEncode(bits);
+}
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+  const saltHex = hexEncode(salt);
+  const hash = await pbkdf2Derive(password, salt);
+  return `pbkdf2v1:${saltHex}:${hash}`;
+}
+
+export async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  if (storedHash.startsWith("pbkdf2v1:")) {
+    const parts = storedHash.split(":");
+    if (parts.length !== 3) return false;
+    const salt = hexDecode(parts[1]);
+    const expected = parts[2];
+    const actual = await pbkdf2Derive(password, salt);
+    // Constant-time comparison to prevent timing attacks
+    if (actual.length !== expected.length) return false;
+    let diff = 0;
+    for (let i = 0; i < actual.length; i++) diff |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
+    return diff === 0;
+  }
+  // Legacy path: plain SHA-256 without salt — kept only to migrate existing accounts
+  const enc = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", enc.encode(password));
+  const legacyHash = hexEncode(hashBuffer);
+  if (legacyHash.length !== storedHash.length) return false;
+  let diff = 0;
+  for (let i = 0; i < legacyHash.length; i++) diff |= legacyHash.charCodeAt(i) ^ storedHash.charCodeAt(i);
+  return diff === 0;
+}
+
+// ── Auth Context ──────────────────────────────────────────────────────────────
 
 interface AuthCtx {
   user: Omit<User, "passwordHash"> | null;
@@ -60,15 +114,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!dbUser) return { error: "Invalid username or password" };
     const valid = await verifyPassword(password, dbUser.passwordHash);
     if (!valid) return { error: "Invalid username or password" };
-    const lastLogin = now();
-    try { await db.users.update(dbUser.id, { lastLogin, updatedAt: lastLogin }); } catch { /* best effort */ }
-    const { passwordHash: _ph, ...safeUser } = { ...dbUser, lastLogin };
+    const loginTime = now();
+
+    // Transparently upgrade legacy SHA-256 hashes to PBKDF2 on first successful login
+    let updatedHash: string | undefined;
+    if (!dbUser.passwordHash.startsWith("pbkdf2v1:")) {
+      try {
+        updatedHash = await hashPassword(password);
+      } catch { /* best effort */ }
+    }
+
+    try {
+      await db.users.update(dbUser.id, {
+        lastLogin: loginTime,
+        updatedAt: loginTime,
+        ...(updatedHash ? { passwordHash: updatedHash } : {}),
+      });
+    } catch { /* best effort */ }
+
+    const { passwordHash: _ph, ...safeUser } = { ...dbUser, lastLogin: loginTime };
     setUser(safeUser);
     localStorage.setItem(SESSION_KEY, JSON.stringify({ id: dbUser.id }));
+
+    addAuditLog({
+      action: "LOGIN",
+      tableName: "users",
+      recordId: dbUser.id,
+      userId: dbUser.id,
+      changes: `User "${dbUser.username}" signed in.`,
+    }).catch(() => {});
+
     return { error: null };
   };
 
   const signOut = () => {
+    if (user) {
+      addAuditLog({
+        action: "LOGOUT",
+        tableName: "users",
+        recordId: user.id,
+        userId: user.id,
+        changes: `User "${user.username}" signed out.`,
+      }).catch(() => {});
+    }
     setUser(null);
     localStorage.removeItem(SESSION_KEY);
   };
@@ -94,6 +182,8 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
   return ctx;
 }
+
+// ── Role helpers ──────────────────────────────────────────────────────────────
 
 const ROLE_PRIORITY: Record<string, number> = {
   administrator: 3,
@@ -146,12 +236,17 @@ async function ensureDefaultAdmin() {
   }
 }
 
-export async function createUser(input: {
-  username: string;
-  fullName: string;
-  password: string;
-  role: "administrator" | "admin" | "staff";
-}) {
+// ── User CRUD (exported) ──────────────────────────────────────────────────────
+
+export async function createUser(
+  input: {
+    username: string;
+    fullName: string;
+    password: string;
+    role: "administrator" | "admin" | "staff";
+  },
+  actorId?: string,
+) {
   const existing = await db.users.where("username").equals(input.username.toLowerCase().trim()).first();
   if (existing) throw new Error("Username already taken");
   const hash = await hashPassword(input.password);
@@ -165,6 +260,13 @@ export async function createUser(input: {
     updatedAt: now(),
   };
   await db.users.add(user);
+  addAuditLog({
+    action: "USER_CREATED",
+    tableName: "users",
+    recordId: user.id,
+    userId: actorId ?? null,
+    changes: `User "${user.username}" (${user.role}) created.`,
+  }).catch(() => {});
   return user;
 }
 
@@ -172,6 +274,7 @@ export async function updateUserPassword(
   userId: string,
   newPassword: string,
   actorRole?: AppRole,
+  actorId?: string,
 ) {
   if (actorRole !== undefined && actorRole !== "administrator") {
     throw new Error("Access denied: Only administrators can reset other users' passwords.");
@@ -182,6 +285,13 @@ export async function updateUserPassword(
   }
   const hash = await hashPassword(newPassword);
   await db.users.update(userId, { passwordHash: hash, updatedAt: now() });
+  addAuditLog({
+    action: "PASSWORD_RESET",
+    tableName: "users",
+    recordId: userId,
+    userId: actorId ?? null,
+    changes: `Password for user "${target?.username}" was reset by an administrator.`,
+  }).catch(() => {});
 }
 
 export async function changeOwnPassword(
@@ -196,6 +306,13 @@ export async function changeOwnPassword(
   if (newPassword.length < 6) throw new Error("New password must be at least 6 characters.");
   const hash = await hashPassword(newPassword);
   await db.users.update(userId, { passwordHash: hash, updatedAt: now() });
+  addAuditLog({
+    action: "PASSWORD_CHANGED",
+    tableName: "users",
+    recordId: userId,
+    userId,
+    changes: `User "${target.username}" changed their own password.`,
+  }).catch(() => {});
 }
 
 export async function listUsers(): Promise<Omit<User, "passwordHash">[]> {
@@ -245,10 +362,17 @@ export async function updateUserProfile(
   await db.users.update(userId, patch);
 }
 
-export async function deleteUser(id: string) {
+export async function deleteUser(id: string, actorId?: string) {
   const target = await db.users.get(id);
   if (target?.role === "administrator") {
     throw new Error("Administrator accounts cannot be deleted.");
   }
   await db.users.delete(id);
+  addAuditLog({
+    action: "USER_DELETED",
+    tableName: "users",
+    recordId: id,
+    userId: actorId ?? null,
+    changes: `User "${target?.username}" was deleted.`,
+  }).catch(() => {});
 }

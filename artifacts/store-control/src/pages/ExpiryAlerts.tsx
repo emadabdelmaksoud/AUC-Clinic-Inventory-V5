@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { BellRing, Download, Printer, AlertTriangle, Clock, CheckCircle2, Filter, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { escapeHtml } from "@/lib/utils";
 
 type StatusFilter = "all" | "expired" | "near" | "ok";
 
@@ -157,12 +158,12 @@ export default function ExpiryAlertsPage() {
       const statusColor = r.status === "expired" ? "#dc2626" : r.status === "near" ? "#ea580c" : "#16a34a";
       return `<tr style="${color ? `background:${color}` : ""}">
         <td>${i + 1}</td>
-        <td><strong>${r.productName}</strong><br><small>${r.productCode}</small></td>
-        <td>${r.batchNumber ?? "—"}</td>
-        <td><strong>${r.expiryDate}</strong></td>
+        <td><strong>${escapeHtml(r.productName)}</strong><br><small>${escapeHtml(r.productCode)}</small></td>
+        <td>${escapeHtml(r.batchNumber) || "—"}</td>
+        <td><strong>${escapeHtml(r.expiryDate)}</strong></td>
         <td style="text-align:right">${r.quantity}</td>
-        <td>${r.baseUnit}</td>
-        <td>${r.warehouseName}${r.sectionName ? ` / ${r.sectionName}` : ""}</td>
+        <td>${escapeHtml(r.baseUnit)}</td>
+        <td>${escapeHtml(r.warehouseName)}${r.sectionName ? ` / ${escapeHtml(r.sectionName)}` : ""}</td>
         <td style="color:${statusColor};font-weight:600;text-align:center">${statusText}</td>
       </tr>`;
     }).join("");
