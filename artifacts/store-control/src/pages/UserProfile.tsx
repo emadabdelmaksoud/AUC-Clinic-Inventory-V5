@@ -625,7 +625,7 @@ export default function UserProfilePage() {
   const profileUser = allUsers.find(u => u.id === userId);
 
   if (loadingUsers) return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4 w-full">
       <div className="h-8 w-40 bg-muted animate-pulse rounded" />
       <div className="h-48 bg-muted animate-pulse rounded-xl" />
       <div className="h-32 bg-muted animate-pulse rounded-xl" />
@@ -633,7 +633,7 @@ export default function UserProfilePage() {
   );
 
   if (!profileUser) return (
-    <div className="max-w-4xl space-y-4">
+    <div className="w-full space-y-4">
       <Link href="/users"><Button variant="ghost" size="sm" className="gap-1.5 -ml-2"><ArrowLeft className="w-4 h-4" /> Back to Users</Button></Link>
       <div className="text-center py-16 text-muted-foreground">
         <User className="w-12 h-12 mx-auto mb-3 opacity-20" />
@@ -654,23 +654,42 @@ export default function UserProfilePage() {
   const filteredActivity = activityFilter === "all" ? activity : activity.filter(a => a.action === activityFilter);
 
   return (
-    <div className="space-y-5 max-w-4xl">
+    <div className="space-y-5 w-full">
       {/* Back */}
       <Link href="/users"><Button variant="ghost" size="sm" className="gap-1.5 -ml-2"><ArrowLeft className="w-4 h-4" /> Back to Users</Button></Link>
 
       {/* ── Header Card ── */}
       <Card>
         <CardContent className="pt-6 pb-5">
-          <div className="flex items-start gap-5 flex-wrap sm:flex-nowrap">
+          <div className="flex items-start gap-4">
             <Avatar name={profileUser.fullName || profileUser.username} photoUrl={profileUser.photoUrl} size="xl" />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl font-bold">{profileUser.fullName || profileUser.username}</h1>
-                {isCurrentUser && <Badge variant="outline" className="text-xs">You</Badge>}
-                <StatusBadgeUser status={profileUser.status} />
+              {/* Name row: title left, action buttons right — buttons drop below on mobile */}
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                <div className="min-w-0">
+                  <h1 className="text-xl sm:text-2xl font-bold break-words leading-tight">
+                    {profileUser.fullName || profileUser.username}
+                  </h1>
+                  <div className="flex items-center gap-2 flex-wrap mt-1">
+                    {isCurrentUser && <Badge variant="outline" className="text-xs">You</Badge>}
+                    <StatusBadgeUser status={profileUser.status} />
+                  </div>
+                </div>
+                {canEditProfile && editMode === null && (
+                  <div className="flex sm:flex-col gap-2 sm:gap-1.5 flex-shrink-0">
+                    <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs whitespace-nowrap" onClick={() => setEditMode("profile")}>
+                      <Edit2 className="w-3.5 h-3.5" /> Edit Profile
+                    </Button>
+                    {canChangePassword && (
+                      <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs whitespace-nowrap" onClick={() => setEditMode("password")}>
+                        <KeyRound className="w-3.5 h-3.5" /> Change Password
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
               {profileUser.position && (
-                <p className="text-sm text-muted-foreground mt-0.5">{profileUser.position}{profileUser.department ? ` · ${profileUser.department}` : ""}</p>
+                <p className="text-sm text-muted-foreground mt-1.5 break-words">{profileUser.position}{profileUser.department ? ` · ${profileUser.department}` : ""}</p>
               )}
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <RoleBadge role={profileUser.role} />
@@ -683,23 +702,11 @@ export default function UserProfilePage() {
               </div>
               {(profileUser.email || profileUser.phone) && (
                 <div className="flex gap-4 mt-2 flex-wrap">
-                  {profileUser.email && <span className="text-xs text-muted-foreground flex items-center gap-1"><Mail className="w-3 h-3" />{profileUser.email}</span>}
-                  {profileUser.phone && <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="w-3 h-3" />{profileUser.phone}</span>}
+                  {profileUser.email && <span className="text-xs text-muted-foreground flex items-center gap-1 break-all"><Mail className="w-3 h-3 flex-shrink-0" />{profileUser.email}</span>}
+                  {profileUser.phone && <span className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="w-3 h-3 flex-shrink-0" />{profileUser.phone}</span>}
                 </div>
               )}
             </div>
-            {canEditProfile && editMode === null && (
-              <div className="flex flex-col gap-1.5 flex-shrink-0">
-                <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" onClick={() => setEditMode("profile")}>
-                  <Edit2 className="w-3.5 h-3.5" /> Edit Profile
-                </Button>
-                {canChangePassword && (
-                  <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" onClick={() => setEditMode("password")}>
-                    <KeyRound className="w-3.5 h-3.5" /> Change Password
-                  </Button>
-                )}
-              </div>
-            )}
           </div>
         </CardContent>
       </Card>
