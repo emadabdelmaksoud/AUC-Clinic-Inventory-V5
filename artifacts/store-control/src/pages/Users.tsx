@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert, UserCircle, XCircle } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { CheckCircle2, Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert, UserCircle, XCircle, MoreVertical } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -300,52 +301,53 @@ export default function UsersPage() {
                       {format(new Date(u.createdAt), "MMM d, yyyy")}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5 justify-end flex-wrap">
+                      <div className="flex items-center gap-2 justify-end">
                         <Link href={`/users/${u.id}`}>
-                          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 font-medium border-border hover:bg-accent hover:text-accent-foreground shadow-sm">
+                          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 font-medium">
                             <UserCircle className="w-3.5 h-3.5" /> View Profile
                           </Button>
                         </Link>
                         {canManage && !actorCanManage && (
-                          <span className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-md px-2 py-1">
-                            <ShieldAlert className="w-3 h-3" /> Protected
+                          <span title="Administrator — protected account">
+                            <ShieldAlert className="w-4 h-4 text-purple-500" />
                           </span>
                         )}
                         {canManage && actorCanManage && u.id !== currentUser?.id && (
-                          <>
-                            <Button
-                              size="sm"
-                              className={`h-8 text-xs gap-1.5 font-medium shadow-sm border ${
-                                isActive
-                                  ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-950/50"
-                                  : "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-700 dark:hover:bg-emerald-950/50"
-                              }`}
-                              variant="outline"
-                              onClick={() => toggleStatus(u)}
-                              title={isActive ? "Deactivate user" : "Activate user"}
-                            >
-                              {isActive ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                              {isActive ? "Deactivate" : "Activate"}
-                            </Button>
-                            {canResetPassword(currentUser?.role) && (
-                              <Button
-                                size="sm" variant="outline"
-                                className="h-8 text-xs gap-1.5 font-medium shadow-sm border-border hover:bg-accent"
-                                onClick={() => setResetPwUser({ id: u.id, name: u.fullName || u.username, role: u.role as AppRole })}
-                              >
-                                <Key className="w-3.5 h-3.5" /> Reset PW
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                <MoreVertical className="w-4 h-4" />
                               </Button>
-                            )}
-                            {isSuperAdmin(currentUser?.role) && (
-                              <Button
-                                size="icon" variant="outline"
-                                className="h-8 w-8 text-destructive border-destructive/30 hover:bg-destructive/10 hover:border-destructive/50 shadow-sm"
-                                title="Delete user" onClick={() => setDeleteId(u.id)}
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44">
+                              {canResetPassword(currentUser?.role) && (
+                                <DropdownMenuItem
+                                  className="gap-2 text-sm cursor-pointer"
+                                  onClick={() => setResetPwUser({ id: u.id, name: u.fullName || u.username, role: u.role as AppRole })}
+                                >
+                                  <Key className="w-3.5 h-3.5" /> Reset PW
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                className={`gap-2 text-sm cursor-pointer ${isActive ? "text-amber-600 focus:text-amber-700 focus:bg-amber-50" : "text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50"}`}
+                                onClick={() => toggleStatus(u)}
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                          </>
+                                {isActive ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                {isActive ? "Deactivate" : "Activate"}
+                              </DropdownMenuItem>
+                              {isSuperAdmin(currentUser?.role) && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="gap-2 text-sm cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
+                                    onClick={() => setDeleteId(u.id)}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" /> Delete User
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </div>
                     </td>
