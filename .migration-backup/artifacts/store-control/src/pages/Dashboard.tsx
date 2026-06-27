@@ -2,11 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { getOverviewKpis } from "@/lib/reports";
 import { listExpiredBatches, listNearExpiryBatches, listLowStockProducts } from "@/lib/fifo";
 import { listTransactions, TRANSACTION_LABELS } from "@/lib/inventory";
+import { listAssetsByUserId } from "@/lib/assets";
 import { db } from "@/lib/db";
+import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { Package, Warehouse, AlertTriangle, Activity, TrendingDown, Clock, Boxes, Layers, TrendingUp } from "lucide-react";
+import { Briefcase, Crown, Package, ShieldCheck, UserCircle, Warehouse, AlertTriangle, Activity, TrendingDown, Clock, Boxes, Layers, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 
 function KpiCard({
@@ -55,6 +58,64 @@ const txnTypeColor: Record<string, string> = {
   inventory_count: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
 };
 
+function MyProfileCard() {
+  const { user } = useAuth();
+  if (!user) return null;
+
+  const initials = (() => {
+    const parts = (user.fullName || user.username).trim().split(/\s+/);
+    return parts.length >= 2
+      ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+      : (user.fullName || user.username).slice(0, 2).toUpperCase();
+  })();
+
+  const { data: myAssets = [] } = useQuery({
+    queryKey: ["assetsByUser", user.id],
+    queryFn: () => listAssetsByUserId(user.id),
+  });
+  const activeCount = myAssets.filter(a => a.status === "active").length;
+
+  return (
+    <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-primary/0">
+      <CardContent className="pt-4 pb-4">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-primary/15 text-primary flex items-center justify-center text-lg font-bold flex-shrink-0">
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold text-base leading-tight">{user.fullName || user.username}</p>
+              {user.role === "administrator" ? (
+                <Badge className="text-xs gap-1 bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100">
+                  <Crown className="w-3 h-3" /> Administrator
+                </Badge>
+              ) : user.role === "admin" ? (
+                <Badge variant="default" className="text-xs gap-1">
+                  <ShieldCheck className="w-3 h-3" /> Admin
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-xs capitalize">{user.role}</Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground font-mono mt-0.5">@{user.username}</p>
+            {myAssets.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <Briefcase className="w-3 h-3" />
+                {activeCount} active asset{activeCount !== 1 ? "s" : ""} assigned
+              </p>
+            )}
+          </div>
+          <Link href={`/users/${user.id}`}>
+            <Button size="sm" variant="outline" className="gap-1.5 flex-shrink-0 border-primary/30 hover:bg-primary/5">
+              <UserCircle className="w-4 h-4" /> My Profile
+            </Button>
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   const { data: kpis } = useQuery({ queryKey: ["overview_kpis"], queryFn: getOverviewKpis });
 
@@ -99,6 +160,8 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Inventory overview and alerts</p>
       </div>
+
+      <MyProfileCard />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard

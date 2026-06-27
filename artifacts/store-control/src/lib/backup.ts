@@ -3,6 +3,10 @@ import { isSupabaseConfigured, getSupabaseClient } from "./supabase";
 import * as XLSX from "xlsx";
 import type { TxnRow, StockSummaryRow } from "./reports";
 import { upsertBatch, recordTransaction } from "./inventory";
+import { sanitizeXlsxCell } from "./utils";
+
+const MAX_BACKUP_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const ALLOWED_JSON_MIME = new Set(["application/json", "text/json", "text/plain", ""]);
 
 export async function exportBackup(): Promise<void> {
   const [products, productUnits, warehouses, sections, batches, transactions, users, auditLogs] = await Promise.all([
@@ -32,9 +36,25 @@ export async function exportBackup(): Promise<void> {
 }
 
 export async function importBackup(file: File): Promise<{ imported: number }> {
+  if (!file.name.toLowerCase().endsWith(".json")) {
+    throw new Error("Invalid file: please select a .json backup file.");
+  }
+  if (!ALLOWED_JSON_MIME.has(file.type)) {
+    throw new Error("Invalid file type: please select a .json backup file.");
+  }
+  if (file.size > MAX_BACKUP_FILE_SIZE) {
+    throw new Error(`Backup file is too large (max ${Math.round(MAX_BACKUP_FILE_SIZE / 1024 / 1024)} MB).`);
+  }
   const text = await file.text();
-  const backup = JSON.parse(text);
-  if (!backup.data) throw new Error("Invalid backup file");
+  let backup: any;
+  try {
+    backup = JSON.parse(text);
+  } catch {
+    throw new Error("Invalid backup file: the file is not valid JSON.");
+  }
+  if (!backup || typeof backup !== "object" || !backup.data || typeof backup.data !== "object") {
+    throw new Error("Invalid backup file: missing or malformed data section.");
+  }
   const d = backup.data;
 
   // ------------------------------------------------------------------
@@ -259,14 +279,14 @@ export async function migrateLocalToSupabase(
 export async function exportProductsExcel(): Promise<void> {
   const products = await db.products.toArray();
   const ws = XLSX.utils.json_to_sheet(products.map(p => ({
-    "Product Code": p.productCode,
-    "Product Name": p.productName,
-    "Barcode": p.barcode ?? "",
-    "Category": p.category ?? "",
-    "Manufacturer": p.manufacturer ?? "",
-    "Base Unit": p.baseUnit,
+    "Product Code": sanitizeXlsxCell(p.productCode),
+    "Product Name": sanitizeXlsxCell(p.productName),
+    "Barcode": sanitizeXlsxCell(p.barcode),
+    "Category": sanitizeXlsxCell(p.category),
+    "Manufacturer": sanitizeXlsxCell(p.manufacturer),
+    "Base Unit": sanitizeXlsxCell(p.baseUnit),
     "Reorder Level": p.reorderLevel,
-    "Notes": p.notes ?? "",
+    "Notes": sanitizeXlsxCell(p.notes),
   })));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Products");
@@ -285,12 +305,12 @@ export async function exportInventoryExcel(): Promise<void> {
   const sectionMap = new Map(sections.map(s => [s.id, s]));
 
   const ws = XLSX.utils.json_to_sheet(batches.map(b => ({
-    "Product Code": productMap.get(b.productId)?.productCode ?? "",
-    "Product Name": productMap.get(b.productId)?.productName ?? "",
-    "Warehouse": warehouseMap.get(b.warehouseId)?.warehouseName ?? "",
-    "Section": b.sectionId ? (sectionMap.get(b.sectionId)?.sectionName ?? "") : "",
-    "Batch Number": b.batchNumber ?? "",
-    "Expiry Date": b.expiryDate ?? "",
+    "Product Code": sanitizeXlsxCell(productMap.get(b.productId)?.productCode),
+    "Product Name": sanitizeXlsxCell(productMap.get(b.productId)?.productName),
+    "Warehouse": sanitizeXlsxCell(warehouseMap.get(b.warehouseId)?.warehouseName),
+    "Section": sanitizeXlsxCell(b.sectionId ? sectionMap.get(b.sectionId)?.sectionName : ""),
+    "Batch Number": sanitizeXlsxCell(b.batchNumber),
+    "Expiry Date": sanitizeXlsxCell(b.expiryDate),
     "Quantity (Base Unit)": b.quantityBaseUnit,
   })));
   const wb = XLSX.utils.book_new();
@@ -305,20 +325,20 @@ export async function exportTransactionsExcel(rows: TxnRow[], label = "transacti
     inventory_count: "Inventory Count",
   };
   const ws = XLSX.utils.json_to_sheet(rows.map(t => ({
-    "Date": t.createdAt.slice(0, 16).replace("T", " "),
-    "Type": TRANSACTION_LABELS[t.transactionType] ?? t.transactionType,
-    "Product Code": t.productCode,
-    "Product Name": t.productName,
-    "Category": t.category ?? "",
+    "Date": sanitizeXlsxCell(t.createdAt.slice(0, 16).replace("T", " ")),
+    "Type": sanitizeXlsxCell(TRANSACTION_LABELS[t.transactionType] ?? t.transactionType),
+    "Product Code": sanitizeXlsxCell(t.productCode),
+    "Product Name": sanitizeXlsxCell(t.productName),
+    "Category": sanitizeXlsxCell(t.category),
     "Quantity": t.quantity,
-    "Unit": t.unitName ?? "",
+    "Unit": sanitizeXlsxCell(t.unitName),
     "Qty (Base Unit)": t.quantityBaseUnit,
-    "Warehouse": t.warehouseName,
-    "Section": t.sectionName ?? "",
-    "Batch Number": t.batchNumber ?? "",
-    "Expiry Date": t.expiryDate ?? "",
-    "Performed By": t.performedByName ?? "",
-    "Notes": t.notes ?? "",
+    "Warehouse": sanitizeXlsxCell(t.warehouseName),
+    "Section": sanitizeXlsxCell(t.sectionName),
+    "Batch Number": sanitizeXlsxCell(t.batchNumber),
+    "Expiry Date": sanitizeXlsxCell(t.expiryDate),
+    "Performed By": sanitizeXlsxCell(t.performedByName),
+    "Notes": sanitizeXlsxCell(t.notes),
   })));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Transactions");
@@ -327,11 +347,11 @@ export async function exportTransactionsExcel(rows: TxnRow[], label = "transacti
 
 export async function exportStockSummaryExcel(rows: StockSummaryRow[]): Promise<void> {
   const ws = XLSX.utils.json_to_sheet(rows.map(p => ({
-    "Product Code": p.productCode,
-    "Product Name": p.productName,
-    "Category": p.category ?? "",
+    "Product Code": sanitizeXlsxCell(p.productCode),
+    "Product Name": sanitizeXlsxCell(p.productName),
+    "Category": sanitizeXlsxCell(p.category),
     "On Hand (Base Unit)": p.onHandBase,
-    "Base Unit": p.baseUnit,
+    "Base Unit": sanitizeXlsxCell(p.baseUnit),
     "Reorder Level": p.reorderLevel,
     "Active Batches": p.batchCount,
     "Near Expiry Batches": p.nearExpiry,

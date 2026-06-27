@@ -11,7 +11,7 @@ import { Shield, Download, FileSpreadsheet, FileText, ChevronDown } from "lucide
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { StatusBadge, AssetDetail } from "./Assets";
-import { cn, sanitizeXlsxCell } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export default function MyCustodyPage() {
   const { user } = useAuth();
@@ -39,19 +39,19 @@ export default function MyCustodyPage() {
       const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
       const catMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
       const rows = myAssets.map(a => ({
-        "Asset Name": sanitizeXlsxCell(a.assetName),
-        "Asset Type": sanitizeXlsxCell(typeMap[a.assetTypeId]),
-        "Category": sanitizeXlsxCell(a.assetCategoryId ? (catMap[a.assetCategoryId] ?? "") : ""),
-        "FY Number": sanitizeXlsxCell(a.fyNumber),
-        "FA Number": sanitizeXlsxCell(a.faNumber),
-        "CC Number": sanitizeXlsxCell(a.ccNumber),
-        "Serial Number": sanitizeXlsxCell(a.serialNumber),
+        "Asset Name": a.assetName,
+        "Asset Type": typeMap[a.assetTypeId] ?? "",
+        "Category": a.assetCategoryId ? (catMap[a.assetCategoryId] ?? "") : "",
+        "FY Number": a.fyNumber ?? "",
+        "FA Number": a.faNumber ?? "",
+        "CC Number": a.ccNumber ?? "",
+        "Serial Number": a.serialNumber ?? "",
         "Quantity": a.quantity,
-        "Status": sanitizeXlsxCell(ASSET_STATUS_LABELS[a.status] ?? a.status),
-        "Phone": sanitizeXlsxCell(a.custodianPhone),
-        "ID Number": sanitizeXlsxCell(a.custodianIdNumber),
-        "Email": sanitizeXlsxCell(a.custodianEmail),
-        "Notes": sanitizeXlsxCell(a.notes),
+        "Status": ASSET_STATUS_LABELS[a.status] ?? a.status,
+        "Phone": a.custodianPhone ?? "",
+        "ID Number": a.custodianIdNumber ?? "",
+        "Email": a.custodianEmail ?? "",
+        "Notes": a.notes ?? "",
         "Created": a.createdAt.slice(0, 10),
       }));
       const ws = XLSX.utils.json_to_sheet(rows);

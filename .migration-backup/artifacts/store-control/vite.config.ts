@@ -20,6 +20,7 @@ export default defineConfig(async () => ({
       includeAssets: ["icon.png", "icons/icon-192.png", "icons/icon-256.png", "icons/icon-512.png"],
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,
@@ -95,12 +96,24 @@ export default defineConfig(async () => ({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 3000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom"],
+          "vendor-ui": ["@radix-ui/react-dialog", "@radix-ui/react-select", "@radix-ui/react-dropdown-menu"],
+          "vendor-data": ["@tanstack/react-query", "dexie", "zod"],
+          "vendor-export": ["xlsx", "jspdf", "jspdf-autotable"],
+        },
+      },
+    },
   },
   server: {
     port,
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    hmr: { overlay: false },
     fs: {
       strict: false,
     },

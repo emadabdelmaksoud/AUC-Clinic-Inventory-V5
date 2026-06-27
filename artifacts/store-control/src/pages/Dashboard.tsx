@@ -79,8 +79,12 @@ function MyProfileCard() {
     <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-primary/0">
       <CardContent className="pt-4 pb-4">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-primary/15 text-primary flex items-center justify-center text-lg font-bold flex-shrink-0">
-            {initials}
+          <div className="w-14 h-14 rounded-full bg-primary/15 text-primary flex items-center justify-center text-lg font-bold flex-shrink-0 overflow-hidden">
+            {user.photoUrl ? (
+              <img src={user.photoUrl} alt={user.fullName || user.username} className="w-full h-full object-cover" />
+            ) : (
+              initials
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">

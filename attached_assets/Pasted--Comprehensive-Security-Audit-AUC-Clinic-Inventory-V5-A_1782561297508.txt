@@ -1,0 +1,218 @@
+# Comprehensive Security Audit – AUC Clinic Inventory V5
+
+Act as a Senior Security Engineer, Senior Full-Stack Engineer, and DevSecOps Engineer.
+
+Perform a complete security audit of the entire project. Do not refactor or redesign the application unless it is required to fix a confirmed security vulnerability.
+
+## Goals
+
+1. Audit the entire application.
+2. Identify every security weakness.
+3. Classify each issue by severity:
+
+   * Critical
+   * High
+   * Medium
+   * Low
+4. Explain why each issue is a security risk.
+5. Fix only confirmed vulnerabilities.
+6. Preserve the current functionality, UI, project structure, routing, and business logic.
+
+---
+
+## Audit Scope
+
+### Authentication
+
+* Login flow
+* Session handling
+* Password storage
+* Password reset
+* User creation
+* Logout
+* Token handling
+* Session expiration
+* Privilege escalation
+
+### Authorization
+
+* Verify every admin-only page
+* Verify every staff-only page
+* Verify every API endpoint
+* Verify every database operation
+* Prevent direct URL access to admin pages
+* Prevent unauthorized CRUD operations
+
+### Supabase
+
+Audit:
+
+* RLS policies
+* Database permissions
+* anon role permissions
+* authenticated role permissions
+* service_role usage
+* SQL injection risks
+* exposed tables
+* exposed views
+* storage policies
+* indexes affecting security
+
+Provide SQL fixes if needed.
+
+---
+
+### API
+
+Check:
+
+* Input validation
+* Output validation
+* Error leakage
+* Stack traces
+* HTTP status codes
+* Rate limiting
+* Authorization
+* Authentication
+* Sensitive data exposure
+
+---
+
+### Frontend
+
+Check:
+
+* XSS
+* DOM injection
+* HTML injection
+* Unsafe rendering
+* Dangerous React patterns
+* LocalStorage usage
+* Session storage
+* Token storage
+* Environment variables
+* Browser security
+
+---
+
+### Database
+
+Review:
+
+* Schema
+* Foreign keys
+* Constraints
+* Cascade deletes
+* Transactions
+* Audit logs
+* Soft delete
+* Data integrity
+
+---
+
+### File Import / Export
+
+Review:
+
+* Excel import
+* Excel export
+* File validation
+* File size limits
+* Formula injection
+* Malicious spreadsheets
+
+---
+
+### Dependencies
+
+Review every dependency.
+
+Check for:
+
+* Known CVEs
+* Deprecated packages
+* Unsafe packages
+* Unused packages
+* Dependency confusion risks
+
+Update only safe packages that will not break the application.
+
+---
+
+### Secrets
+
+Ensure:
+
+* No API keys are committed
+* No credentials are hardcoded
+* No secrets appear in logs
+* Environment variables are correctly used
+
+---
+
+### Production Security
+
+Review:
+
+* Vercel configuration
+* Supabase configuration
+* Security headers
+* CSP
+* HTTPS
+* CORS
+* Cache headers
+
+Recommend improvements where appropriate.
+
+---
+
+### Logging
+
+Ensure:
+
+* No passwords logged
+* No tokens logged
+* No sensitive personal information logged
+* Audit logs contain only necessary information
+
+---
+
+### Performance & Security
+
+Identify security improvements that also improve performance, such as:
+
+* Excessive database queries
+* Missing indexes
+* Large payloads
+* Over-fetching
+* N+1 queries
+
+---
+
+## Validation
+
+After every fix:
+
+1. Build the project.
+2. Ensure TypeScript has zero errors.
+3. Ensure ESLint passes.
+4. Ensure all existing functionality still works.
+5. Ensure there are no regressions.
+
+---
+
+## Deliverables
+
+Produce a report containing:
+
+1. Executive Summary
+2. Security Score (/100)
+3. List of vulnerabilities
+4. Severity of each vulnerability
+5. Files modified
+6. Reason for every modification
+7. Remaining recommendations
+8. Confirmation that the application still builds successfully
+9. Confirmation that all existing functionality remains unchanged
+
+Do not introduce new features, redesign the application, or change the UI unless required to fix a confirmed security issue.

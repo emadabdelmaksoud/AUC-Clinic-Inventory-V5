@@ -61,7 +61,7 @@ function AccessDeniedNote() {
   );
 }
 
-function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole: AppRole }) {
+function CreateUserForm({ onClose, actorRole, actorId }: { onClose: () => void; actorRole: AppRole; actorId?: string }) {
   const qc = useQueryClient();
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
@@ -78,7 +78,7 @@ function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole
     }
     setSaving(true);
     try {
-      await createUser({ username, fullName, password, role });
+      await createUser({ username, fullName, password, role }, actorId);
       toast.success("User created");
       qc.invalidateQueries({ queryKey: ["users"] });
       onClose();
@@ -134,7 +134,7 @@ function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole
   );
 }
 
-function ResetPasswordForm({ userId, userName, actorRole, onClose }: { userId: string; userName: string; actorRole: AppRole; onClose: () => void }) {
+function ResetPasswordForm({ userId, userName, actorRole, actorId, onClose }: { userId: string; userName: string; actorRole: AppRole; actorId?: string; onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -146,7 +146,7 @@ function ResetPasswordForm({ userId, userName, actorRole, onClose }: { userId: s
     if (password !== confirm) { toast.error("Passwords do not match"); return; }
     setSaving(true);
     try {
-      await updateUserPassword(userId, password, actorRole);
+      await updateUserPassword(userId, password, actorRole, actorId);
       toast.success(`Password reset for ${userName}`);
       onClose();
     } catch (err) {
@@ -196,7 +196,7 @@ export default function UsersPage() {
   const { data: users = [], isLoading } = useQuery({ queryKey: ["users"], queryFn: listUsers });
 
   const { mutate: doDelete } = useMutation({
-    mutationFn: (id: string) => deleteUser(id),
+    mutationFn: (id: string) => deleteUser(id, currentUser?.id),
     onSuccess: () => {
       toast.success("User deleted");
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -302,35 +302,44 @@ export default function UsersPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5 justify-end flex-wrap">
                         <Link href={`/users/${u.id}`}>
-                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5">
-                            <UserCircle className="w-3 h-3" /> View Profile
+                          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 font-medium border-border hover:bg-accent hover:text-accent-foreground shadow-sm">
+                            <UserCircle className="w-3.5 h-3.5" /> View Profile
                           </Button>
                         </Link>
                         {canManage && !actorCanManage && (
-                          <span className="text-xs text-muted-foreground flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Protected</span>
+                          <span className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-md px-2 py-1">
+                            <ShieldAlert className="w-3 h-3" /> Protected
+                          </span>
                         )}
                         {canManage && actorCanManage && u.id !== currentUser?.id && (
                           <>
                             <Button
-                              size="sm" variant="outline"
-                              className={`h-7 text-xs gap-1.5 ${isActive ? "text-amber-600 border-amber-300 hover:bg-amber-50" : "text-green-600 border-green-300 hover:bg-green-50"}`}
+                              size="sm"
+                              className={`h-8 text-xs gap-1.5 font-medium shadow-sm border ${
+                                isActive
+                                  ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-950/50"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-700 dark:hover:bg-emerald-950/50"
+                              }`}
+                              variant="outline"
                               onClick={() => toggleStatus(u)}
                               title={isActive ? "Deactivate user" : "Activate user"}
                             >
-                              {isActive ? <XCircle className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                              {isActive ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                               {isActive ? "Deactivate" : "Activate"}
                             </Button>
                             {canResetPassword(currentUser?.role) && (
                               <Button
-                                size="sm" variant="outline" className="h-7 text-xs gap-1.5"
+                                size="sm" variant="outline"
+                                className="h-8 text-xs gap-1.5 font-medium shadow-sm border-border hover:bg-accent"
                                 onClick={() => setResetPwUser({ id: u.id, name: u.fullName || u.username, role: u.role as AppRole })}
                               >
-                                <Key className="w-3 h-3" /> Reset PW
+                                <Key className="w-3.5 h-3.5" /> Reset PW
                               </Button>
                             )}
                             {isSuperAdmin(currentUser?.role) && (
                               <Button
-                                size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                size="icon" variant="outline"
+                                className="h-8 w-8 text-destructive border-destructive/30 hover:bg-destructive/10 hover:border-destructive/50 shadow-sm"
                                 title="Delete user" onClick={() => setDeleteId(u.id)}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -354,7 +363,7 @@ export default function UsersPage() {
             <DialogTitle>Create User</DialogTitle>
             <DialogDescription>Add a new staff member or admin account.</DialogDescription>
           </DialogHeader>
-          <CreateUserForm onClose={() => setShowCreate(false)} actorRole={currentUser?.role as AppRole} />
+          <CreateUserForm onClose={() => setShowCreate(false)} actorRole={currentUser?.role as AppRole} actorId={currentUser?.id} />
         </DialogContent>
       </Dialog>
 
@@ -367,7 +376,7 @@ export default function UsersPage() {
           {resetPwUser && resetPwUser.role === "administrator" && !isSuperAdmin(currentUser?.role) ? (
             <AccessDeniedNote />
           ) : resetPwUser ? (
-            <ResetPasswordForm userId={resetPwUser.id} userName={resetPwUser.name} actorRole={currentUser?.role as AppRole} onClose={() => setResetPwUser(null)} />
+            <ResetPasswordForm userId={resetPwUser.id} userName={resetPwUser.name} actorRole={currentUser?.role as AppRole} actorId={currentUser?.id} onClose={() => setResetPwUser(null)} />
           ) : null}
         </DialogContent>
       </Dialog>

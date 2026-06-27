@@ -16,7 +16,8 @@ export type Resource =
   | "backups"
   | "org_settings"
   | "lists_management"
-  | "restore_points";
+  | "restore_points"
+  | "assets";
 
 export type Action = "view" | "create" | "edit" | "delete" | "manage";
 
@@ -42,6 +43,7 @@ const MATRIX: Matrix = {
     org_settings: ALL,
     lists_management: ALL,
     restore_points: ALL,
+    assets: ALL,
   },
   admin: {
     products: ALL,
@@ -60,6 +62,7 @@ const MATRIX: Matrix = {
     org_settings: [],
     lists_management: [],
     restore_points: [],
+    assets: [],
   },
   staff: {
     products: ["view"],
@@ -78,6 +81,7 @@ const MATRIX: Matrix = {
     org_settings: [],
     lists_management: [],
     restore_points: [],
+    assets: [],
   },
 };
 
@@ -123,5 +127,6 @@ export function visibleSections(role: AppRole | null | undefined) {
     auditLogs: can(role, "audit_logs", "view"),
     settings: can(role, "settings", "view"),
     backups: can(role, "backups", "view"),
+    assets: can(role, "assets", "view"),
   };
 }

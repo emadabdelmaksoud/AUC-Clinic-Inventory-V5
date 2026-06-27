@@ -3,7 +3,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { z } from "zod";
 import { db, generateId, now, type AssetType, type AssetCategory, type Asset, type AssetStatus, type AssetTransaction } from "./db";
-import { sanitizeXlsxCell } from "./utils";
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -310,22 +309,22 @@ function buildExportRows(assets: Asset[], types: AssetType[], categories: AssetC
   const typeMap = Object.fromEntries(types.map(t => [t.id, t.name]));
   const catMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
   return assets.map(a => ({
-    "Asset Name": sanitizeXlsxCell(a.assetName),
-    "Asset Type": sanitizeXlsxCell(typeMap[a.assetTypeId] ?? a.assetTypeId),
-    "Category": sanitizeXlsxCell(a.assetCategoryId ? (catMap[a.assetCategoryId] ?? "") : ""),
-    "FY Number": sanitizeXlsxCell(a.fyNumber),
-    "FA Number": sanitizeXlsxCell(a.faNumber),
-    "CC Number": sanitizeXlsxCell(a.ccNumber),
-    "Serial Number": sanitizeXlsxCell(a.serialNumber),
+    "Asset Name": a.assetName,
+    "Asset Type": typeMap[a.assetTypeId] ?? a.assetTypeId,
+    "Category": a.assetCategoryId ? (catMap[a.assetCategoryId] ?? "") : "",
+    "FY Number": a.fyNumber ?? "",
+    "FA Number": a.faNumber ?? "",
+    "CC Number": a.ccNumber ?? "",
+    "Serial Number": a.serialNumber ?? "",
     "Quantity": a.quantity,
-    "Status": sanitizeXlsxCell(ASSET_STATUS_LABELS[a.status] ?? a.status),
+    "Status": ASSET_STATUS_LABELS[a.status] ?? a.status,
     "Custodian Type": a.custodianType === "system_user" ? "System User" : a.custodianType === "external_staff" ? "External Staff" : "",
-    "Custodian Name": sanitizeXlsxCell(a.custodianName),
-    "Custodian Phone": sanitizeXlsxCell(a.custodianPhone),
-    "Custodian ID": sanitizeXlsxCell(a.custodianIdNumber),
-    "Custodian Email": sanitizeXlsxCell(a.custodianEmail),
-    "Custodian Notes": sanitizeXlsxCell(a.custodianNotes),
-    "Asset Notes": sanitizeXlsxCell(a.notes),
+    "Custodian Name": a.custodianName ?? "",
+    "Custodian Phone": a.custodianPhone ?? "",
+    "Custodian ID": a.custodianIdNumber ?? "",
+    "Custodian Email": a.custodianEmail ?? "",
+    "Custodian Notes": a.custodianNotes ?? "",
+    "Asset Notes": a.notes ?? "",
     "Created": a.createdAt.slice(0, 10),
   }));
 }
