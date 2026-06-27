@@ -30,6 +30,7 @@ import AssetsPage from "@/pages/Assets";
 import AssetTypesPage from "@/pages/AssetTypes";
 import AssetReportPage from "@/pages/AssetReport";
 import MyCustodyPage from "@/pages/MyCustody";
+import UserProfilePage from "@/pages/UserProfile";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 30, retry: 1 } },
@@ -82,6 +83,7 @@ function AppRouter() {
         <Route path="/asset-types" component={AssetTypesPage} />
         <Route path="/asset-report" component={AssetReportPage} />
         <Route path="/my-custody" component={MyCustodyPage} />
+        <Route path="/users/:id" component={UserProfilePage} />
         <Route><Redirect to="/" /></Route>
       </Switch>
     </AppLayout>

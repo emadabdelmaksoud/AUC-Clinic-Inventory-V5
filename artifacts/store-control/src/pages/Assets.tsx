@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/permissions";
@@ -8,11 +8,14 @@ import {
   filterAssets, seedDefaultAssetTypes,
   exportFullAssetRegister, exportAssetsByType, exportAssetsByStatus, exportAssetsByCustodian,
   exportPdfFullRegister, exportPdfByType, exportPdfByStatus, exportPdfByCustodian,
+  listAssetTransactions, importAssetsFromExcel, downloadImportTemplate,
   ASSET_STATUS_LABELS,
   assetSchema, type AssetInput, type AssetFilters,
 } from "@/lib/assets";
 import { listUsers } from "@/lib/auth";
-import type { Asset, AssetType, AssetCategory } from "@/lib/db";
+import { listWarehouses, listSections } from "@/lib/warehouses";
+import { Link } from "wouter";
+import type { Asset, AssetType, AssetCategory, AssetTransaction } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -22,10 +25,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Briefcase, Plus, Search, Pencil, Trash2, Eye, X, Download, ChevronDown, FileSpreadsheet, FileText, ArrowRightLeft } from "lucide-react";
+import { Briefcase, Plus, Search, Pencil, Trash2, Eye, X, Download, ChevronDown, FileSpreadsheet, FileText, ArrowRightLeft, Upload, Clock, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Redirect } from "wouter";
@@ -60,45 +64,136 @@ function DetailRow({ label, value }: { label: string; value?: string | number | 
   );
 }
 
+// ── Action Badge (for history) ─────────────────────────────────────────────────
+
+const ACTION_COLORS: Record<string, string> = {
+  created: "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300",
+  updated: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300",
+  deleted: "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300",
+  custody_transferred: "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300",
+  location_changed: "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300",
+  status_changed: "bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300",
+  imported: "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300",
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  created: "Created",
+  updated: "Updated",
+  deleted: "Deleted",
+  custody_transferred: "Custody Transfer",
+  location_changed: "Location Changed",
+  status_changed: "Status Changed",
+  imported: "Imported",
+};
+
+function ActionBadge({ action }: { action: string }) {
+  return (
+    <Badge variant="outline" className={cn("text-xs flex-shrink-0", ACTION_COLORS[action] ?? "")}>
+      {ACTION_LABELS[action] ?? action}
+    </Badge>
+  );
+}
+
 // ── Asset Detail View ─────────────────────────────────────────────────────────
 
 export function AssetDetail({ asset, types, categories }: { asset: Asset; types: AssetType[]; categories: AssetCategory[] }) {
   const typeName = types.find(t => t.id === asset.assetTypeId)?.name ?? "—";
   const catName = asset.assetCategoryId ? categories.find(c => c.id === asset.assetCategoryId)?.name ?? "—" : "—";
+
+  const { data: warehouses = [] } = useQuery({ queryKey: ["warehouses"], queryFn: () => listWarehouses() });
+  const { data: sections = [] } = useQuery({
+    queryKey: ["sections", asset.warehouseId],
+    queryFn: () => asset.warehouseId ? listSections(asset.warehouseId) : Promise.resolve([]),
+    enabled: !!asset.warehouseId,
+  });
+  const { data: history = [] } = useQuery({
+    queryKey: ["assetTransactions", asset.id],
+    queryFn: () => listAssetTransactions(asset.id),
+  });
+
+  const warehouseName = asset.warehouseId ? (warehouses.find(w => w.id === asset.warehouseId)?.warehouseName ?? "—") : null;
+  const sectionName = asset.sectionId ? (sections.find(s => s.id === asset.sectionId)?.sectionName ?? "—") : null;
+
   return (
-    <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
-      <div className="flex items-center gap-2">
-        <StatusBadge status={asset.status} />
-        <span className="text-sm text-muted-foreground">Qty: {asset.quantity}</span>
-      </div>
-      <div className="rounded-lg border bg-card px-4 py-2">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Asset Info</p>
-        <DetailRow label="Asset Name" value={asset.assetName} />
-        <DetailRow label="Asset Type" value={typeName} />
-        <DetailRow label="Category" value={catName} />
-        <DetailRow label="FY Number" value={asset.fyNumber} />
-        <DetailRow label="FA Number" value={asset.faNumber} />
-        <DetailRow label="CC Number" value={asset.ccNumber} />
-        <DetailRow label="Serial Number" value={asset.serialNumber} />
-        <DetailRow label="Notes" value={asset.notes} />
-      </div>
-      {asset.custodianType && (
-        <div className="rounded-lg border bg-card px-4 py-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Custodian Info</p>
-          <DetailRow label="Custodian Type" value={asset.custodianType === "system_user" ? "System User" : "External Staff"} />
-          <DetailRow label="Name" value={asset.custodianName} />
-          <DetailRow label="Phone" value={asset.custodianPhone} />
-          <DetailRow label="ID Number" value={asset.custodianIdNumber} />
-          <DetailRow label="Email" value={asset.custodianEmail} />
-          <DetailRow label="Assignment Date" value={asset.custodianAssignmentDate ? format(new Date(asset.custodianAssignmentDate), "dd MMM yyyy") : null} />
-          <DetailRow label="Notes" value={asset.custodianNotes} />
+    <Tabs defaultValue="details">
+      <TabsList className="mb-3 w-full">
+        <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
+        <TabsTrigger value="history" className="flex-1">
+          <Clock className="w-3.5 h-3.5 mr-1.5" />
+          History {history.length > 0 && `(${history.length})`}
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="details">
+        <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
+          <div className="flex items-center gap-2">
+            <StatusBadge status={asset.status} />
+            <span className="text-sm text-muted-foreground">Qty: {asset.quantity}</span>
+          </div>
+          <div className="rounded-lg border bg-card px-4 py-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Asset Info</p>
+            <DetailRow label="Asset Name" value={asset.assetName} />
+            <DetailRow label="Asset Type" value={typeName} />
+            <DetailRow label="Category" value={catName} />
+            <DetailRow label="FY Number" value={asset.fyNumber} />
+            <DetailRow label="FA Number" value={asset.faNumber} />
+            <DetailRow label="CC Number" value={asset.ccNumber} />
+            <DetailRow label="Serial Number" value={asset.serialNumber} />
+            <DetailRow label="Notes" value={asset.notes} />
+          </div>
+          {(warehouseName || sectionName) && (
+            <div className="rounded-lg border bg-card px-4 py-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5" /> Location
+              </p>
+              {warehouseName && <DetailRow label="Warehouse" value={warehouseName} />}
+              {sectionName && <DetailRow label="Section" value={sectionName} />}
+            </div>
+          )}
+          {asset.custodianType && (
+            <div className="rounded-lg border bg-card px-4 py-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Custodian Info</p>
+              <DetailRow label="Custodian Type" value={asset.custodianType === "system_user" ? "System User" : "External Staff"} />
+              <DetailRow label="Name" value={asset.custodianName} />
+              <DetailRow label="Phone" value={asset.custodianPhone} />
+              <DetailRow label="ID Number" value={asset.custodianIdNumber} />
+              <DetailRow label="Email" value={asset.custodianEmail} />
+              <DetailRow label="Assignment Date" value={asset.custodianAssignmentDate ? format(new Date(asset.custodianAssignmentDate), "dd MMM yyyy") : null} />
+              <DetailRow label="Notes" value={asset.custodianNotes} />
+            </div>
+          )}
+          <div className="rounded-lg border bg-card px-4 py-2">
+            <DetailRow label="Created" value={format(new Date(asset.createdAt), "PPP")} />
+            <DetailRow label="Last Updated" value={format(new Date(asset.updatedAt), "PPP")} />
+          </div>
         </div>
-      )}
-      <div className="rounded-lg border bg-card px-4 py-2">
-        <DetailRow label="Created" value={format(new Date(asset.createdAt), "PPP")} />
-        <DetailRow label="Last Updated" value={format(new Date(asset.updatedAt), "PPP")} />
-      </div>
-    </div>
+      </TabsContent>
+
+      <TabsContent value="history">
+        <div className="max-h-[55vh] overflow-y-auto space-y-2 pr-1">
+          {history.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground">
+              <Clock className="w-8 h-8 mx-auto mb-2 opacity-20" />
+              <p className="text-sm">No history recorded yet</p>
+            </div>
+          ) : (
+            history.map(tx => (
+              <div key={tx.id} className="flex gap-3 p-3 rounded-lg border bg-card text-sm">
+                <Clock className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm leading-snug">{tx.summary}</p>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                    {tx.performedByName && <span>By {tx.performedByName}</span>}
+                    <span>{format(new Date(tx.createdAt), "dd MMM yyyy, HH:mm")}</span>
+                  </div>
+                </div>
+                <ActionBadge action={tx.action} />
+              </div>
+            ))
+          )}
+        </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -136,12 +231,15 @@ function AssetForm({ onClose, editing, types, categories }: {
           custodianAssignmentDate: editing.custodianAssignmentDate ?? "",
           custodianNotes: editing.custodianNotes ?? "",
           notes: editing.notes ?? "",
+          warehouseId: editing.warehouseId ?? null,
+          sectionId: editing.sectionId ?? null,
         }
       : {
           assetName: "", assetTypeId: "", assetCategoryId: "", fyNumber: "", faNumber: "",
           ccNumber: "", serialNumber: "", quantity: 1, status: "active",
           custodianType: undefined, custodianUserId: "", custodianName: "",
           custodianPhone: "", custodianIdNumber: "", custodianEmail: "", custodianAssignmentDate: "", custodianNotes: "", notes: "",
+          warehouseId: null, sectionId: null,
         },
   });
 
@@ -164,10 +262,19 @@ function AssetForm({ onClose, editing, types, categories }: {
     if (u) form.setValue("custodianName", u.fullName || u.username);
   };
 
+  const { data: warehouses = [] } = useQuery({ queryKey: ["warehouses"], queryFn: () => listWarehouses() });
+  const selectedWarehouseId = form.watch("warehouseId");
+  const { data: availableSections = [] } = useQuery({
+    queryKey: ["sections", selectedWarehouseId],
+    queryFn: () => selectedWarehouseId ? listSections(selectedWarehouseId) : Promise.resolve([]),
+    enabled: !!selectedWarehouseId,
+  });
+
   const { mutate, isPending } = useMutation({
     mutationFn: async (data: AssetInput): Promise<void> => {
-      if (editing) await updateAsset(editing.id, data, user?.id ?? null);
-      else await createAsset(data, user?.id ?? null);
+      const uName = user?.fullName || user?.username || null;
+      if (editing) await updateAsset(editing.id, data, user?.id ?? null, uName);
+      else await createAsset(data, user?.id ?? null, uName);
     },
     onSuccess: () => {
       toast.success(editing ? "Asset updated" : "Asset created");
@@ -257,6 +364,42 @@ function AssetForm({ onClose, editing, types, categories }: {
                 <FormMessage />
               </FormItem>
             )} />
+          </div>
+
+          {/* Location */}
+          <div className="border rounded-lg p-3 space-y-3 bg-muted/20">
+            <Label className="text-sm font-semibold flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Location</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField control={form.control} name="warehouseId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs text-muted-foreground">Warehouse</FormLabel>
+                  <Select value={field.value ?? ""} onValueChange={v => { field.onChange(v || null); form.setValue("sectionId", null); }}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="— None —" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="">— None —</SelectItem>
+                      {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.warehouseName}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="sectionId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs text-muted-foreground">Section</FormLabel>
+                  <Select value={field.value ?? ""} onValueChange={v => field.onChange(v || null)}
+                    disabled={!selectedWarehouseId || availableSections.length === 0}>
+                    <FormControl><SelectTrigger>
+                      <SelectValue placeholder={!selectedWarehouseId ? "Select warehouse first" : availableSections.length === 0 ? "No sections" : "— None —"} />
+                    </SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="">— None —</SelectItem>
+                      {availableSections.map(s => <SelectItem key={s.id} value={s.id}>{s.sectionName}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
           </div>
 
           {/* Custodian Type */}
@@ -637,6 +780,8 @@ export default function AssetsPage() {
   const { data: allAssets = [], isLoading } = useQuery({ queryKey: ["assets"], queryFn: listAssets });
   const { data: types = [] } = useQuery({ queryKey: ["assetTypes"], queryFn: listAssetTypes });
   const { data: categories = [] } = useQuery({ queryKey: ["assetCategories"], queryFn: () => listAssetCategories() });
+  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: listUsers });
+  const { data: warehouses = [] } = useQuery({ queryKey: ["warehouses"], queryFn: () => listWarehouses() });
 
   useEffect(() => {
     seedDefaultAssetTypes().then(() => {
@@ -656,15 +801,41 @@ export default function AssetsPage() {
   const filteredCats = filters.assetTypeId ? categories.filter(c => c.assetTypeId === filters.assetTypeId) : categories;
 
   const { mutate: doDelete } = useMutation({
-    mutationFn: deleteAsset,
+    mutationFn: (id: string) => deleteAsset(id, user?.id ?? null, user?.fullName || user?.username || null),
     onSuccess: () => { toast.success("Asset deleted"); qc.invalidateQueries({ queryKey: ["assets"] }); setDeleteId(null); },
     onError: (e) => toast.error((e as Error).message),
   });
 
-  const hasFilters = !!filters.search || !!filters.assetTypeId || !!filters.assetCategoryId || !!filters.status;
+  const importRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const result = await importAssetsFromExcel(file, user?.id ?? null, user?.fullName || user?.username || null);
+      toast.success(`Imported ${result.imported} asset${result.imported !== 1 ? "s" : ""}`);
+      if (result.errors.length > 0) {
+        toast.warning(`${result.errors.length} row${result.errors.length !== 1 ? "s" : ""} skipped`, {
+          description: result.errors.slice(0, 3).join(" • ") + (result.errors.length > 3 ? ` …and ${result.errors.length - 3} more` : ""),
+        });
+      }
+      qc.invalidateQueries({ queryKey: ["assets"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+    setImporting(false);
+    e.target.value = "";
+  }
+
+  const hasFilters = !!filters.search || !!filters.assetTypeId || !!filters.assetCategoryId || !!filters.status || !!filters.warehouseId || !!filters.custodianUserId;
 
   return (
     <div className="space-y-4 max-w-6xl">
+      {/* Hidden import file input */}
+      <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
@@ -676,6 +847,16 @@ export default function AssetsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <Button variant="outline" size="sm" disabled={importing} onClick={() => importRef.current?.click()}>
+              <Upload className="w-4 h-4 mr-1.5" />
+              {importing ? "Importing…" : "Import"}
+            </Button>
+          </div>
+          <Button variant="ghost" size="sm" className="text-muted-foreground text-xs" title="Download import template"
+            onClick={() => downloadImportTemplate()}>
+            Template
+          </Button>
           <ExportDropdown />
           <Button size="sm" onClick={() => { setEditingAsset(undefined); setShowCreate(true); }}>
             <Plus className="w-4 h-4 mr-1" /> Add Asset
@@ -712,6 +893,20 @@ export default function AssetsPage() {
               <SelectContent>
                 <SelectItem value="">All Statuses</SelectItem>
                 {Object.entries(ASSET_STATUS_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filters.warehouseId ?? ""} onValueChange={v => setFilters(f => ({ ...f, warehouseId: v || undefined }))}>
+              <SelectTrigger className="w-40"><SelectValue placeholder="All Locations" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Locations</SelectItem>
+                {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.warehouseName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filters.custodianUserId ?? ""} onValueChange={v => setFilters(f => ({ ...f, custodianUserId: v || undefined }))}>
+              <SelectTrigger className="w-44"><SelectValue placeholder="All Custodians" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Custodians</SelectItem>
+                {users.map(u => <SelectItem key={u.id} value={u.id}>{u.fullName || u.username}</SelectItem>)}
               </SelectContent>
             </Select>
             {hasFilters && (
@@ -766,7 +961,13 @@ export default function AssetsPage() {
                       {!asset.fyNumber && !asset.faNumber && !asset.ccNumber && <span>—</span>}
                     </td>
                     <td className="px-4 py-3 hidden xl:table-cell text-sm">
-                      <p>{asset.custodianName || <span className="text-muted-foreground">—</span>}</p>
+                      {asset.custodianUserId && asset.custodianType === "system_user" ? (
+                        <Link href={`/users/${asset.custodianUserId}`} className="font-medium hover:underline text-primary">
+                          {asset.custodianName || "View User"}
+                        </Link>
+                      ) : (
+                        <p>{asset.custodianName || <span className="text-muted-foreground">—</span>}</p>
+                      )}
                       {asset.custodianPhone && <p className="text-xs text-muted-foreground">{asset.custodianPhone}</p>}
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={asset.status} /></td>

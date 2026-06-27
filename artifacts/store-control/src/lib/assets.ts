@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { z } from "zod";
-import { db, generateId, now, type AssetType, type AssetCategory, type Asset, type AssetStatus } from "./db";
+import { db, generateId, now, type AssetType, type AssetCategory, type Asset, type AssetStatus, type AssetTransaction } from "./db";
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -36,6 +36,8 @@ export const assetSchema = z.object({
   custodianAssignmentDate: z.string().nullable().optional(),
   custodianNotes: z.string().trim().max(1000).nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
+  warehouseId: z.string().nullable().optional(),
+  sectionId: z.string().nullable().optional(),
 });
 export type AssetInput = z.infer<typeof assetSchema>;
 
@@ -179,11 +181,35 @@ function buildAssetRecord(input: AssetInput, userId: string | null, existing?: A
     custodianAssignmentDate: input.custodianAssignmentDate || null,
     custodianNotes: blank(input.custodianNotes),
     notes: blank(input.notes),
+    warehouseId: blank(input.warehouseId),
+    sectionId: blank(input.sectionId),
     updatedAt: now(),
   };
 }
 
-export async function createAsset(input: AssetInput, userId: string | null): Promise<Asset> {
+async function logAssetTransaction(
+  assetId: string,
+  action: AssetTransaction["action"],
+  summary: string,
+  userId: string | null,
+  userName?: string | null,
+): Promise<void> {
+  try {
+    await db.assetTransactions.add({
+      id: generateId(),
+      assetId,
+      action,
+      summary,
+      performedBy: userId,
+      performedByName: userName ?? null,
+      createdAt: now(),
+    });
+  } catch {
+    // non-blocking — history is best-effort
+  }
+}
+
+export async function createAsset(input: AssetInput, userId: string | null, userName?: string | null): Promise<Asset> {
   const record: Asset = {
     id: generateId(),
     ...buildAssetRecord(input, userId),
@@ -191,24 +217,67 @@ export async function createAsset(input: AssetInput, userId: string | null): Pro
     createdAt: now(),
   };
   await db.assets.add(record);
+  await logAssetTransaction(record.id, "created", `Asset "${record.assetName}" created`, userId, userName);
   return record;
 }
 
-export async function updateAsset(id: string, input: AssetInput, userId: string | null): Promise<void> {
-  await db.assets.update(id, buildAssetRecord(input, userId));
+export async function updateAsset(id: string, input: AssetInput, userId: string | null, userName?: string | null): Promise<void> {
+  const old = await db.assets.get(id);
+  const data = buildAssetRecord(input, userId);
+  await db.assets.update(id, data);
+
+  let action: AssetTransaction["action"] = "updated";
+  const parts: string[] = [];
+
+  if (old) {
+    const custodianChanged = old.custodianName !== data.custodianName || old.custodianUserId !== data.custodianUserId;
+    const statusChanged = old.status !== data.status;
+    const locationChanged = old.warehouseId !== data.warehouseId || old.sectionId !== data.sectionId;
+    if (custodianChanged) {
+      action = "custody_transferred";
+      parts.push(`Custody: "${old.custodianName || "Unassigned"}" → "${data.custodianName || "Unassigned"}"`);
+    }
+    if (statusChanged) {
+      if (!custodianChanged) action = "status_changed";
+      parts.push(`Status: "${ASSET_STATUS_LABELS[old.status as AssetStatus] ?? old.status}" → "${ASSET_STATUS_LABELS[data.status as AssetStatus] ?? data.status}"`);
+    }
+    if (locationChanged) {
+      if (!custodianChanged && !statusChanged) action = "location_changed";
+      parts.push("Location updated");
+    }
+  }
+
+  const summary = parts.length > 0 ? parts.join("; ") : `Asset "${data.assetName}" updated`;
+  await logAssetTransaction(id, action, summary, userId, userName);
 }
 
-export async function deleteAsset(id: string): Promise<void> {
+export async function deleteAsset(id: string, userId?: string | null, userName?: string | null): Promise<void> {
+  const asset = await db.assets.get(id);
   await db.assets.delete(id);
+  if (asset) {
+    await logAssetTransaction(id, "deleted", `Asset "${asset.assetName}" deleted`, userId ?? null, userName);
+  }
+}
+
+export async function listAssetTransactions(assetId: string): Promise<AssetTransaction[]> {
+  const txns = await db.assetTransactions.filter(t => t.assetId === assetId).toArray();
+  return txns.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 // ── Search & Filter ───────────────────────────────────────────────────────────
+
+export async function listAssetTransactionsByUser(userId: string): Promise<AssetTransaction[]> {
+  const txns = await db.assetTransactions.filter(t => t.performedBy === userId).toArray();
+  return txns.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
 
 export interface AssetFilters {
   search?: string;
   assetTypeId?: string;
   assetCategoryId?: string;
   status?: AssetStatus | "";
+  warehouseId?: string;
+  custodianUserId?: string;
 }
 
 export function filterAssets(assets: Asset[], filters: AssetFilters): Asset[] {
@@ -229,6 +298,8 @@ export function filterAssets(assets: Asset[], filters: AssetFilters): Asset[] {
   if (filters.assetTypeId) result = result.filter(a => a.assetTypeId === filters.assetTypeId);
   if (filters.assetCategoryId) result = result.filter(a => a.assetCategoryId === filters.assetCategoryId);
   if (filters.status) result = result.filter(a => a.status === filters.status);
+  if (filters.warehouseId) result = result.filter(a => a.warehouseId === filters.warehouseId);
+  if (filters.custodianUserId) result = result.filter(a => a.custodianUserId === filters.custodianUserId);
   return result;
 }
 
@@ -476,4 +547,129 @@ export async function exportPdfByCustodian(): Promise<void> {
 
 export async function exportPdfMyCustody(assets: Asset[], types: AssetType[], categories: AssetCategory[], custodianName: string): Promise<void> {
   makePdf(`My Custody — ${custodianName}`, buildPdfRows(assets, types, categories), `my-custody-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+// ── Excel Import ──────────────────────────────────────────────────────────────
+
+export async function downloadImportTemplate(): Promise<void> {
+  const template = [{
+    "Asset Name": "Example Laptop",
+    "Asset Type": "IT Equipment",
+    "Category": "Laptop",
+    "FY Number": "FY-2024-001",
+    "FA Number": "FA-001",
+    "CC Number": "CC-001",
+    "Serial Number": "SN-12345",
+    "Quantity": 1,
+    "Status": "Active",
+    "Custodian Name": "",
+    "Custodian Phone": "",
+    "Custodian ID": "",
+    "Custodian Email": "",
+    "Custodian Notes": "",
+    "Asset Notes": "",
+    "Warehouse": "",
+    "Section": "",
+  }];
+  const ws = XLSX.utils.json_to_sheet(template);
+  ws["!cols"] = Object.keys(template[0]).map(() => ({ wch: 20 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Assets");
+  XLSX.writeFile(wb, "assets-import-template.xlsx");
+}
+
+export async function importAssetsFromExcel(
+  file: File,
+  userId: string | null,
+  userName?: string | null,
+): Promise<{ imported: number; errors: string[] }> {
+  const data = await file.arrayBuffer();
+  const wb = XLSX.read(data, { type: "array" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+
+  const [allTypes, allCats] = await Promise.all([listAssetTypes(), listAssetCategories()]);
+  const allWarehouses = await db.warehouses.toArray();
+  const allSections = await db.warehouseSections.toArray();
+
+  const typeMap = new Map(allTypes.map(t => [t.name.trim().toLowerCase(), t.id]));
+  const catMap = new Map(allCats.map(c => [`${c.assetTypeId}::${c.name.trim().toLowerCase()}`, c.id]));
+  const warehouseMap = new Map(allWarehouses.map(w => [w.warehouseName.trim().toLowerCase(), w.id]));
+  const sectionMap = new Map(allSections.map(s => [`${s.warehouseId}::${s.sectionName.trim().toLowerCase()}`, s.id]));
+
+  const STATUS_IMPORT_MAP: Record<string, AssetStatus> = {
+    "active": "active",
+    "in storage": "in_storage",
+    "in_storage": "in_storage",
+    "under maintenance": "under_maintenance",
+    "under_maintenance": "under_maintenance",
+    "lost": "lost",
+    "disposed": "disposed",
+  };
+
+  let imported = 0;
+  const errors: string[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2;
+    try {
+      const assetName = String(row["Asset Name"] ?? "").trim();
+      if (!assetName) { errors.push(`Row ${rowNum}: "Asset Name" is required`); continue; }
+
+      const typeName = String(row["Asset Type"] ?? "").trim();
+      const typeId = typeMap.get(typeName.toLowerCase());
+      if (!typeId) { errors.push(`Row ${rowNum}: Asset Type "${typeName}" not found`); continue; }
+
+      const catName = String(row["Category"] ?? "").trim();
+      const catId = catName ? (catMap.get(`${typeId}::${catName.toLowerCase()}`) ?? null) : null;
+
+      const whName = String(row["Warehouse"] ?? "").trim();
+      const warehouseId = whName ? (warehouseMap.get(whName.toLowerCase()) ?? null) : null;
+
+      const secName = String(row["Section"] ?? "").trim();
+      const sectionId = (secName && warehouseId) ? (sectionMap.get(`${warehouseId}::${secName.toLowerCase()}`) ?? null) : null;
+
+      const statusRaw = String(row["Status"] ?? "Active").trim().toLowerCase();
+      const status: AssetStatus = STATUS_IMPORT_MAP[statusRaw] ?? "active";
+
+      const qty = Number(row["Quantity"] ?? 1);
+      const quantity = isNaN(qty) || qty < 1 ? 1 : Math.floor(qty);
+
+      const record: Asset = {
+        id: generateId(),
+        assetName,
+        assetTypeId: typeId,
+        assetCategoryId: catId,
+        fyNumber: String(row["FY Number"] ?? "").trim() || null,
+        faNumber: String(row["FA Number"] ?? "").trim() || null,
+        ccNumber: String(row["CC Number"] ?? "").trim() || null,
+        serialNumber: String(row["Serial Number"] ?? "").trim() || null,
+        quantity,
+        status,
+        custodianType: null,
+        custodianUserId: null,
+        custodianName: String(row["Custodian Name"] ?? "").trim() || null,
+        custodianPhone: String(row["Custodian Phone"] ?? "").trim() || null,
+        custodianIdNumber: String(row["Custodian ID"] ?? "").trim() || null,
+        custodianEmail: String(row["Custodian Email"] ?? "").trim() || null,
+        custodianAssignmentDate: null,
+        custodianNotes: String(row["Custodian Notes"] ?? "").trim() || null,
+        notes: String(row["Asset Notes"] ?? "").trim() || null,
+        warehouseId,
+        sectionId,
+        createdBy: userId,
+        createdAt: now(),
+        updatedAt: now(),
+      };
+
+      await db.assets.add(record);
+      await logAssetTransaction(record.id, "imported", `Asset "${assetName}" imported from Excel`, userId, userName);
+      imported++;
+    } catch (e) {
+      errors.push(`Row ${rowNum}: ${(e as Error).message}`);
+    }
+  }
+
+  return { imported, errors };
 }

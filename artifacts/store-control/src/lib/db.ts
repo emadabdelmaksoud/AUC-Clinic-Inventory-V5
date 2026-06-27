@@ -8,6 +8,14 @@ export interface User {
   fullName: string;
   passwordHash: string;
   role: "administrator" | "admin" | "staff";
+  status?: "active" | "inactive";
+  employeeId?: string;
+  email?: string;
+  department?: string;
+  position?: string;
+  phone?: string;
+  photoUrl?: string;
+  lastLogin?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -157,9 +165,21 @@ export interface Asset {
   custodianAssignmentDate: string | null;
   custodianNotes: string | null;
   notes: string | null;
+  warehouseId: string | null;
+  sectionId: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AssetTransaction {
+  id: string;
+  assetId: string;
+  action: "created" | "updated" | "deleted" | "custody_transferred" | "location_changed" | "status_changed" | "imported";
+  summary: string;
+  performedBy: string | null;
+  performedByName: string | null;
+  createdAt: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,6 +197,7 @@ export class StoreControlDB extends Dexie {
   assetTypes!: Table<AssetType, string>;
   assetCategories!: Table<AssetCategory, string>;
   assets!: Table<Asset, string>;
+  assetTransactions!: Table<AssetTransaction, string>;
 
   constructor() {
     super("StoreControlDB");
@@ -245,6 +266,13 @@ export class StoreControlDB extends Dexie {
         );
       });
     });
+    this.version(4).stores({
+      assets: "id, assetTypeId, assetCategoryId, status, custodianUserId, warehouseId, sectionId, createdAt",
+      assetTransactions: "id, assetId, action, performedBy, createdAt",
+    });
+    this.version(5).stores({
+      users: "id, username, role, status, employeeId, department",
+    });
   }
 }
 
@@ -272,6 +300,7 @@ function makeSupabaseDB() {
     assetTypes: new SupabaseTableAdapter<AssetType>(client, "asset_types"),
     assetCategories: new SupabaseTableAdapter<AssetCategory>(client, "asset_categories"),
     assets: new SupabaseTableAdapter<Asset>(client, "assets"),
+    assetTransactions: new SupabaseTableAdapter<AssetTransaction>(client, "asset_transactions"),
   };
 }
 
