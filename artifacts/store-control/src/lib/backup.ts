@@ -9,7 +9,10 @@ const MAX_BACKUP_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const ALLOWED_JSON_MIME = new Set(["application/json", "text/json", "text/plain", ""]);
 
 export async function exportBackup(): Promise<void> {
-  const [products, productUnits, warehouses, sections, batches, transactions, users, auditLogs] = await Promise.all([
+  const [
+    products, productUnits, warehouses, sections, batches, transactions, users, auditLogs,
+    assetTypes, assetCategories, assets, assetTransactions, externalCustodians,
+  ] = await Promise.all([
     db.products.toArray(),
     db.productUnits.toArray(),
     db.warehouses.toArray(),
@@ -18,12 +21,20 @@ export async function exportBackup(): Promise<void> {
     db.inventoryTransactions.toArray(),
     db.users.toArray().then(us => us.map(({ passwordHash: _ph, ...u }) => u)),
     db.auditLogs.toArray(),
+    db.assetTypes.toArray(),
+    db.assetCategories.toArray(),
+    db.assets.toArray(),
+    db.assetTransactions.toArray(),
+    db.externalCustodians.toArray(),
   ]);
 
   const backup = {
     exportedAt: new Date().toISOString(),
-    version: 1,
-    data: { products, productUnits, warehouses, sections, batches, transactions, users, auditLogs },
+    version: 2,
+    data: {
+      products, productUnits, warehouses, sections, batches, transactions, users, auditLogs,
+      assetTypes, assetCategories, assets, assetTransactions, externalCustodians,
+    },
   };
 
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
@@ -111,9 +122,25 @@ export async function importBackup(file: File): Promise<{ imported: number }> {
         await db.users.bulkPut(usersToInsert);
       }
     } else {
-      // Local Dexie — no FK constraints, insert all, IDs stay the same.
-      await db.users.bulkPut(backupUsers);
-      for (const bu of backupUsers) userIdMap.set(bu.id, bu.id);
+      // Local Dexie — check by username to prevent duplicates on re-import.
+      const existingUsers = await db.users.toArray();
+      const existingByUsername = new Map<string, string>(
+        existingUsers.map((u: any) => [u.username as string, u.id as string])
+      );
+      const usersToInsert: any[] = [];
+      for (const bu of backupUsers) {
+        const existingId = existingByUsername.get(bu.username);
+        if (existingId) {
+          // Already in DB — map backup's local ID → existing ID; skip insert.
+          userIdMap.set(bu.id, existingId);
+        } else {
+          userIdMap.set(bu.id, bu.id);
+          usersToInsert.push(bu);
+        }
+      }
+      if (usersToInsert.length > 0) {
+        await db.users.bulkPut(usersToInsert);
+      }
     }
   }
 
@@ -161,9 +188,33 @@ export async function importBackup(file: File): Promise<{ imported: number }> {
     );
   }
 
+  // 9. Asset Types
+  if (d.assetTypes?.length) await db.assetTypes.bulkPut(d.assetTypes);
+
+  // 10. Asset Categories
+  if (d.assetCategories?.length) await db.assetCategories.bulkPut(d.assetCategories);
+
+  // 11. Assets — custodianUserId → users
+  if (d.assets?.length) {
+    await db.assets.bulkPut(
+      d.assets.map((a: any) => ({ ...a, custodianUserId: resolveUserId(a.custodianUserId) }))
+    );
+  }
+
+  // 12. Asset Transactions — performedBy → users
+  if (d.assetTransactions?.length) {
+    await db.assetTransactions.bulkPut(
+      d.assetTransactions.map((t: any) => ({ ...t, performedBy: resolveUserId(t.performedBy) }))
+    );
+  }
+
+  // 13. External Custodians — no FK references
+  if (d.externalCustodians?.length) await db.externalCustodians.bulkPut(d.externalCustodians);
+
   const total = [
     d.users, d.products, d.productUnits, d.warehouses,
     d.sections, d.batches, d.transactions, d.auditLogs,
+    d.assetTypes, d.assetCategories, d.assets, d.assetTransactions, d.externalCustodians,
   ].reduce((s, arr) => s + (arr?.length ?? 0), 0);
 
   return { imported: total };

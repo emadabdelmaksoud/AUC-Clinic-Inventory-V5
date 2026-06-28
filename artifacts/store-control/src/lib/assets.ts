@@ -3,6 +3,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { z } from "zod";
 import { db, generateId, now, type AssetType, type AssetCategory, type Asset, type AssetStatus, type AssetTransaction } from "./db";
+import { saveExternalCustodianFromAsset } from "./externalCustodians";
 import { sanitizeXlsxCell } from "./utils";
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
@@ -219,6 +220,7 @@ export async function createAsset(input: AssetInput, userId: string | null, user
   };
   await db.assets.add(record);
   await logAssetTransaction(record.id, "created", `Asset "${record.assetName}" created`, userId, userName);
+  await saveExternalCustodianFromAsset(record);
   return record;
 }
 
@@ -250,6 +252,7 @@ export async function updateAsset(id: string, input: AssetInput, userId: string 
 
   const summary = parts.length > 0 ? parts.join("; ") : `Asset "${data.assetName}" updated`;
   await logAssetTransaction(id, action, summary, userId, userName);
+  await saveExternalCustodianFromAsset(data);
 }
 
 export async function deleteAsset(id: string, userId?: string | null, userName?: string | null): Promise<void> {

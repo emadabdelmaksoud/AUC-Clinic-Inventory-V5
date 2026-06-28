@@ -4,6 +4,7 @@ import { listUsers, createUser, deleteUser, updateUserPassword, updateUserProfil
 import { useAuth } from "@/lib/auth";
 import { can, canManageUser, canResetPassword, isSuperAdmin } from "@/lib/permissions";
 import type { AppRole } from "@/lib/permissions";
+import { listExternalCustodians, upsertExternalCustodian, updateExternalCustodian, deleteExternalCustodian, type ExternalCustodian } from "@/lib/externalCustodians";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { CheckCircle2, Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert, UserCircle, XCircle, MoreVertical } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { CheckCircle2, Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert, UserCircle, XCircle, MoreVertical, Pencil, ContactRound } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";

@@ -119,6 +119,18 @@ export interface AppSetting {
   value: string;
 }
 
+export interface ExternalCustodian {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  idNumber: string | null;
+  department: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Assets & Equipment ────────────────────────────────────────────────────────
 
 export interface AssetType {
@@ -198,6 +210,7 @@ export class StoreControlDB extends Dexie {
   assetCategories!: Table<AssetCategory, string>;
   assets!: Table<Asset, string>;
   assetTransactions!: Table<AssetTransaction, string>;
+  externalCustodians!: Table<ExternalCustodian, string>;
 
   constructor() {
     super("StoreControlDB");
@@ -273,6 +286,9 @@ export class StoreControlDB extends Dexie {
     this.version(5).stores({
       users: "id, username, role, status, employeeId, department",
     });
+    this.version(6).stores({
+      externalCustodians: "id, name",
+    });
   }
 }
 
@@ -301,6 +317,7 @@ function makeSupabaseDB() {
     assetCategories: new SupabaseTableAdapter<AssetCategory>(client, "asset_categories"),
     assets: new SupabaseTableAdapter<Asset>(client, "assets"),
     assetTransactions: new SupabaseTableAdapter<AssetTransaction>(client, "asset_transactions"),
+    externalCustodians: new SupabaseTableAdapter<ExternalCustodian>(client, "external_custodians"),
   };
 }
 
