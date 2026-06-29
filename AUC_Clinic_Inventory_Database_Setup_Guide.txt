@@ -1,0 +1,682 @@
+================================================================================
+  AUC CLINIC INVENTORY SYSTEM
+  Database Setup & Data Import Guide
+  Generated: June 27, 2026
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+  1. Overview & Architecture
+  2. Default Setup (No Installation Required)
+  3. How Data Is Stored — Table Reference
+  4. Seeding Initial Data (First-Time Setup)
+  5. Importing Existing Data via JSON Backup
+  6. Importing Data via Excel
+  7. Setting Up Supabase (Optional Cloud Database)
+  8. Migrating Local Data to Supabase
+  9. Restore Points (Local Snapshots)
+  10. Automated Backup Configuration
+  11. Data Relationships & Import Order
+  12. Troubleshooting & Recommendations
+
+
+================================================================================
+1. OVERVIEW & ARCHITECTURE
+================================================================================
+
+This application is a fully OFFLINE-FIRST Progressive Web App (PWA). It does
+NOT require a server-side database to run. All data lives in the browser using
+IndexedDB (a built-in browser database), managed through a library called Dexie.
+
+There are TWO storage modes:
+
+  Mode A — Local Only (Default)
+  -------------------------------------------------------
+  All data is stored in the user's browser (IndexedDB).
+  Nothing leaves the device. Works completely offline.
+  Each browser/device has its own separate database.
+
+  Mode B — Supabase Cloud (Optional)
+  -------------------------------------------------------
+  If you configure Supabase credentials (URL + Anon Key),
+  the app switches to Supabase PostgreSQL as the backend.
+  All users on the same Supabase project share the same data.
+  Requires internet connection for all operations.
+
+You can start with Mode A and migrate to Mode B at any time.
+There is NO intermediate option (no local PostgreSQL, no SQLite file, etc.).
+
+
+================================================================================
+2. DEFAULT SETUP (NO INSTALLATION REQUIRED)
+================================================================================
+
+When you first open the app in a browser:
+
+  Step 1 — The database is created automatically.
+            IndexedDB is built into the browser. Dexie creates all tables
+            on first load. No configuration needed.
+
+  Step 2 — Default records are seeded automatically.
+            The following default data is inserted on first launch:
+
+            Asset Types (pre-loaded):
+              - Medical Equipment
+              - IT Equipment
+              - Furniture
+              - Office Equipment
+              - Vehicles
+              - Other
+
+            Asset Categories (pre-loaded under each type):
+              Examples: Diagnostic Devices, Computers, Desks, etc.
+
+  Step 3 — Create the first Administrator account.
+            On first launch, go to Settings > Users > Add User.
+            Create a user with Role = Administrator.
+            This account has full access to all features.
+
+IMPORTANT: IndexedDB data is tied to the browser profile and origin (domain).
+           If you clear browser data/cookies, all local data is erased.
+           Always maintain regular JSON backups (see Section 5).
+
+
+================================================================================
+3. HOW DATA IS STORED — TABLE REFERENCE
+================================================================================
+
+The following tables exist in the database. All IDs are auto-generated UUIDs.
+
+  TABLE             | DESCRIPTION                        | KEY FIELDS
+  ------------------|------------------------------------|---------------------------
+  users             | Staff accounts & access control    | id, username, role, status
+  products          | Product/medicine catalog           | id, productCode, barcode
+  productUnits      | Units per product (mg, ml, etc.)   | id, productId, unitName
+  warehouses        | Storage locations / stores         | id, warehouseCode, isActive
+  warehouseSections | Sub-sections within a warehouse    | id, warehouseId, sectionName
+  inventoryBatches  | Stock batches with expiry dates    | id, productId, warehouseId
+  inventoryTransactions | All stock movements            | id, transactionType, createdAt
+  assetTypes        | Asset type categories              | id, name
+  assetCategories   | Sub-categories under asset types   | id, assetTypeId, name
+  assets            | Individual clinic assets           | id, status, custodianUserId
+  assetTransactions | Asset custody/movement log         | id, assetId, action
+  auditLogs         | System activity trail              | id, tableName, userId
+  settings          | App configuration (key-value)      | key
+
+  ROLE VALUES (users.role):
+    administrator  — Super admin, full access, cannot be deleted by others
+    admin          — Full access except managing administrators
+    staff          — Limited read/view access
+
+  STATUS VALUES (users.status):
+    active         — Can log in
+    inactive       — Cannot log in (soft deactivation)
+
+
+================================================================================
+4. SEEDING INITIAL DATA (FIRST-TIME SETUP)
+================================================================================
+
+OPTION A: Manual Entry (Recommended for small teams)
+------------------------------------------------------
+Use the app's UI to add data in this order:
+
+  1. Users         → Settings > Users > Add User
+  2. Warehouses    → Warehouses > Add Warehouse
+                     Then add Sections inside each warehouse
+  3. Products      → Products > Add Product
+                     Add units (mg, ml, pcs) for each product
+  4. Stock In      → Inventory > Add Stock (creates initial batches)
+  5. Assets        → Assets > Add Asset
+                     Assign to a user/custodian
+
+OPTION B: Excel Import (Bulk upload for large catalogs)
+--------------------------------------------------------
+See Section 6 for full Excel import instructions.
+You can bulk-import:
+  - Products list (with codes, barcodes, categories)
+  - Stock In records (initial inventory quantities)
+
+OPTION C: JSON Backup Restore
+-------------------------------
+If you have a backup from another device or a previous session,
+restore it as described in Section 5.
+
+
+================================================================================
+5. IMPORTING EXISTING DATA VIA JSON BACKUP
+================================================================================
+
+The JSON backup is the primary full-data transfer method. It captures ALL
+tables in a single file and restores them completely.
+
+HOW TO EXPORT A BACKUP
+-----------------------
+  1. Go to: Settings > Backups (left sidebar)
+  2. Click "Download Backup Now"
+  3. A file named like:
+       clinic-inventory-backup-2026-06-27.json
+     will be downloaded to your device.
+  4. Store this file safely (USB drive, cloud folder, email to yourself).
+
+HOW TO IMPORT / RESTORE A BACKUP
+----------------------------------
+  1. Go to: Settings > Backups
+  2. Click "Import Backup File" (or "Restore from File")
+  3. Select your .json backup file
+  4. The app validates the file structure and version
+  5. Data is MERGED into the current database
+     (existing records with matching IDs are updated,
+      new records are added, nothing is deleted)
+
+BACKUP FILE STRUCTURE (for reference):
+  {
+    "version": 1,
+    "exportedAt": "2026-06-27T...",
+    "users": [ ... ],
+    "products": [ ... ],
+    "productUnits": [ ... ],
+    "warehouses": [ ... ],
+    "warehouseSections": [ ... ],
+    "inventoryBatches": [ ... ],
+    "inventoryTransactions": [ ... ],
+    "assets": [ ... ],
+    "assetTypes": [ ... ],
+    "assetCategories": [ ... ],
+    "assetTransactions": [ ... ]
+  }
+
+VALIDATION RULES (enforced on import):
+  - File must be .json extension
+  - MIME type must be application/json or text/plain
+  - File must not exceed the browser's IndexedDB size limit
+    (typically 50% of available disk, usually several GB)
+  - The JSON must contain at least a "version" field
+
+RECOMMENDATIONS:
+  - Take a backup BEFORE importing to avoid data loss
+  - Keep at least 3 rolling backups (weekly)
+  - Never manually edit the JSON unless you know the schema exactly
+  - After restore, refresh the page to reload all caches
+
+
+================================================================================
+6. IMPORTING DATA VIA EXCEL
+================================================================================
+
+Excel import is available for two data types only:
+  - Products catalog
+  - Stock In (initial inventory quantities)
+
+Navigate to: Settings > Import / Export
+
+--------------------------------------------
+6A. IMPORTING PRODUCTS FROM EXCEL
+--------------------------------------------
+
+REQUIRED COLUMNS (header row must match exactly, case-insensitive):
+
+  Column Name       | Required | Description
+  ------------------|----------|------------------------------------------
+  Product Name      | YES      | Full product name
+  Product Code      | NO       | Internal code (auto-generated if blank)
+  Barcode           | NO       | Barcode number
+  Category          | NO       | Free-text category label
+  Manufacturer      | NO       | Manufacturer name
+  Description       | NO       | Optional description
+
+RULES:
+  - Row 1 must be the header row
+  - Products with a name matching an existing product are SKIPPED (no update)
+  - Products with blank names are skipped
+  - Maximum recommended batch: 500 rows per import
+  - Duplicate product names within the same file: only first is imported
+
+--------------------------------------------
+6B. IMPORTING STOCK IN FROM EXCEL
+--------------------------------------------
+
+REQUIRED COLUMNS:
+
+  Column Name       | Required | Description
+  ------------------|----------|------------------------------------------
+  Product Name      | YES*     | Must match an existing product name exactly
+  Product Code      | YES*     | Can use instead of Product Name
+  Warehouse         | YES      | Must match an existing warehouse name exactly
+  Quantity          | YES      | Number (integer or decimal)
+  Expiry Date       | NO       | Format: YYYY-MM-DD or DD/MM/YYYY
+  Batch Number      | NO       | Reference number for the batch
+  Unit Price        | NO       | Cost per unit (numeric)
+  Notes             | NO       | Free text notes
+
+  * Either Product Name OR Product Code must be provided.
+
+RULES:
+  - Warehouse name must exactly match a warehouse in the system
+  - Product must already exist in the Products table
+  - Quantity must be a positive number
+  - Invalid rows are skipped with a warning count shown after import
+  - This creates "Stock In" transactions and inventory batches
+
+PREPARING YOUR EXCEL FILE:
+  1. Use .xlsx format (not .xls or .csv)
+  2. Use the first sheet only (Sheet1)
+  3. No merged cells in the data range
+  4. Dates must be in a recognizable format
+  5. Do not include currency symbols in numeric columns (use 100 not $100)
+  6. Download the template from the Import/Export page for the exact format
+
+
+================================================================================
+7. SETTING UP SUPABASE (OPTIONAL CLOUD DATABASE)
+================================================================================
+
+Supabase is a free (up to limits) PostgreSQL cloud database service.
+Use it if you need:
+  - Multiple users on different devices sharing the same data
+  - Data to persist even if the browser is cleared
+  - Cloud-based redundancy and access from anywhere
+
+STEP 1 — Create a Supabase Account & Project
+  1. Go to https://supabase.com and sign up (free)
+  2. Create a new Project (choose a region close to your location)
+  3. Wait for the project to initialize (~2 minutes)
+
+STEP 2 — Get Your Credentials
+  1. In Supabase dashboard, go to: Settings > API
+  2. Copy:
+       Project URL        → looks like: https://abcdefgh.supabase.co
+       Anon/Public Key    → a long JWT string starting with "eyJ..."
+  3. Do NOT use the Service Role key in the app (security risk)
+
+STEP 3 — Create the Required Tables in Supabase
+  You must create tables in Supabase that match the app's schema.
+  Run the following SQL in Supabase SQL Editor (Settings > SQL Editor):
+
+  -----------------------------------------------------------------------
+  -- USERS
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    full_name TEXT,
+    password_hash TEXT,
+    password_salt TEXT,
+    role TEXT NOT NULL DEFAULT 'staff',
+    status TEXT NOT NULL DEFAULT 'active',
+    department TEXT,
+    position TEXT,
+    employee_id TEXT,
+    email TEXT,
+    phone TEXT,
+    photo_url TEXT,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- PRODUCTS
+  CREATE TABLE IF NOT EXISTS products (
+    id TEXT PRIMARY KEY,
+    product_code TEXT,
+    product_name TEXT NOT NULL,
+    barcode TEXT,
+    category TEXT,
+    manufacturer TEXT,
+    description TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- PRODUCT UNITS
+  CREATE TABLE IF NOT EXISTS product_units (
+    id TEXT PRIMARY KEY,
+    product_id TEXT REFERENCES products(id),
+    unit_name TEXT NOT NULL,
+    barcode TEXT,
+    conversion_factor NUMERIC DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- WAREHOUSES
+  CREATE TABLE IF NOT EXISTS warehouses (
+    id TEXT PRIMARY KEY,
+    warehouse_code TEXT UNIQUE,
+    warehouse_name TEXT NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- WAREHOUSE SECTIONS
+  CREATE TABLE IF NOT EXISTS warehouse_sections (
+    id TEXT PRIMARY KEY,
+    warehouse_id TEXT REFERENCES warehouses(id),
+    section_name TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- INVENTORY BATCHES
+  CREATE TABLE IF NOT EXISTS inventory_batches (
+    id TEXT PRIMARY KEY,
+    product_id TEXT REFERENCES products(id),
+    warehouse_id TEXT REFERENCES warehouses(id),
+    section_id TEXT,
+    batch_number TEXT,
+    quantity NUMERIC DEFAULT 0,
+    unit_price NUMERIC,
+    expiry_date DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- INVENTORY TRANSACTIONS
+  CREATE TABLE IF NOT EXISTS inventory_transactions (
+    id TEXT PRIMARY KEY,
+    transaction_type TEXT NOT NULL,
+    product_id TEXT,
+    batch_id TEXT,
+    warehouse_id TEXT,
+    quantity NUMERIC,
+    notes TEXT,
+    reference_number TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- ASSET TYPES
+  CREATE TABLE IF NOT EXISTS asset_types (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- ASSET CATEGORIES
+  CREATE TABLE IF NOT EXISTS asset_categories (
+    id TEXT PRIMARY KEY,
+    asset_type_id TEXT REFERENCES asset_types(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- ASSETS
+  CREATE TABLE IF NOT EXISTS assets (
+    id TEXT PRIMARY KEY,
+    asset_name TEXT NOT NULL,
+    asset_type_id TEXT,
+    asset_category_id TEXT,
+    serial_number TEXT,
+    fy_number TEXT,
+    fa_number TEXT,
+    cc_number TEXT,
+    status TEXT DEFAULT 'active',
+    custodian_user_id TEXT,
+    warehouse_id TEXT,
+    section_id TEXT,
+    purchase_date DATE,
+    custodian_assignment_date DATE,
+    notes TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- ASSET TRANSACTIONS
+  CREATE TABLE IF NOT EXISTS asset_transactions (
+    id TEXT PRIMARY KEY,
+    asset_id TEXT REFERENCES assets(id),
+    action TEXT NOT NULL,
+    from_user_id TEXT,
+    to_user_id TEXT,
+    from_warehouse_id TEXT,
+    to_warehouse_id TEXT,
+    summary TEXT,
+    performed_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- AUDIT LOGS
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id TEXT PRIMARY KEY,
+    table_name TEXT,
+    record_id TEXT,
+    action TEXT,
+    user_id TEXT,
+    changes JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  -- SETTINGS
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+  -----------------------------------------------------------------------
+
+STEP 4 — Configure Row-Level Security (RLS) — RECOMMENDED
+  In Supabase, enable RLS on all tables and create a policy that allows
+  authenticated or anon access (since the app uses the anon key):
+
+  -----------------------------------------------------------------------
+  -- Example for each table (repeat for all tables):
+  ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+  CREATE POLICY "Allow all" ON users FOR ALL USING (true);
+  -----------------------------------------------------------------------
+
+  For a production deployment, restrict policies to specific conditions.
+
+STEP 5 — Add Credentials to the App
+  In the Replit project, set these environment variables:
+    VITE_SUPABASE_URL       = https://your-project-id.supabase.co
+    VITE_SUPABASE_ANON_KEY  = eyJ... (your anon/public key)
+
+  To set them in Replit:
+    1. Click the lock icon (Secrets) in the left sidebar
+    2. Add each key-value pair
+    3. Restart the app
+
+  Once set, the app automatically switches to Supabase mode on next load.
+
+STEP 6 — Verify the Connection
+  1. Open the app
+  2. Go to Settings > Backups
+  3. If Supabase Sync is enabled and shows "Connected", setup is complete.
+  4. If it shows an error, double-check your URL and key.
+
+
+================================================================================
+8. MIGRATING LOCAL DATA TO SUPABASE
+================================================================================
+
+If you started with local IndexedDB data and want to move it to Supabase:
+
+  1. Ensure Supabase credentials are configured (Section 7)
+  2. Go to: Settings > Backups
+  3. Click "Migrate to Supabase" (or "Sync to Cloud Now")
+  4. The app will:
+       a. Read all local IndexedDB data
+       b. Push records to Supabase in batches of 200
+       c. Process in dependency order:
+            Users → Products & Warehouses → Batches → Transactions → Assets
+  5. This may take several minutes for large datasets
+  6. Do not close the browser tab during migration
+
+IMPORTANT NOTES:
+  - ID mapping: local UUIDs are preserved in Supabase
+  - If a record already exists in Supabase, it is updated (upsert)
+  - User passwords are stored as hashed values (PBKDF2) — they migrate safely
+  - Run a JSON backup before migrating as a safety net
+
+
+================================================================================
+9. RESTORE POINTS (LOCAL SNAPSHOTS)
+================================================================================
+
+Restore Points are instant local snapshots stored inside a separate IndexedDB
+database called "StoreControlRestorePoints". They are separate from file-based
+JSON backups and do NOT require downloading a file.
+
+HOW TO CREATE A RESTORE POINT:
+  1. Go to: Settings > Backups
+  2. Click "Save Restore Point"
+  3. Give it a name (e.g., "Before bulk import June 2026")
+  4. The full current state of all tables is saved instantly
+
+HOW TO RESTORE FROM A RESTORE POINT:
+  1. Go to: Settings > Backups > Restore Points
+  2. Select the snapshot you want
+  3. Click "Restore" — WARNING: This REPLACES all current data
+  4. Confirm the action
+  5. The page will reload with the restored data
+
+LIMITATIONS:
+  - Restore points are stored in the SAME browser — clearing browser data
+    will delete them
+  - They cannot be transferred between browsers/devices
+  - They are not a substitute for JSON file backups
+  - Storage size depends on browser quota (typically several hundred MB)
+
+RECOMMENDATION: Create a restore point before any bulk import or major change.
+
+
+================================================================================
+10. AUTOMATED BACKUP CONFIGURATION
+================================================================================
+
+The app includes an AutoBackupRunner that triggers backups in the background
+while the app is open. Configure it in: Settings > Backups > Auto Backup.
+
+OFFLINE BACKUP (JSON file download):
+  Options: Off / Daily / Weekly
+  When triggered: automatically downloads a JSON backup file to your device.
+  Last run time is tracked in localStorage.
+
+SUPABASE SYNC (Cloud backup):
+  Options: Off / Daily / Weekly
+  When triggered: automatically syncs all data to Supabase.
+  Only available when Supabase credentials are configured.
+
+HOW IT WORKS:
+  - The AutoBackupRunner checks elapsed time since last backup on each
+    app load and periodically while the app is open.
+  - If the configured interval has passed, it runs the backup silently.
+  - A toast notification appears when the backup completes.
+
+RECOMMENDATION:
+  - Enable Daily JSON backup for offline safety.
+  - Enable Weekly Supabase sync if cloud mode is configured.
+  - Store downloaded JSON files in a dedicated folder (Google Drive, OneDrive).
+
+
+================================================================================
+11. DATA RELATIONSHIPS & IMPORT ORDER
+================================================================================
+
+When manually seeding data or writing custom import scripts, always respect
+this dependency order to avoid foreign key / reference errors:
+
+  STEP 1:  assetTypes            (no dependencies)
+  STEP 2:  assetCategories       (depends on: assetTypes)
+  STEP 3:  users                 (no dependencies)
+  STEP 4:  warehouses            (no dependencies)
+  STEP 5:  warehouseSections     (depends on: warehouses)
+  STEP 6:  products              (no dependencies)
+  STEP 7:  productUnits          (depends on: products)
+  STEP 8:  inventoryBatches      (depends on: products, warehouses, sections)
+  STEP 9:  inventoryTransactions (depends on: products, batches, warehouses)
+  STEP 10: assets                (depends on: assetTypes, assetCategories,
+                                               users, warehouses)
+  STEP 11: assetTransactions     (depends on: assets, users)
+  STEP 12: auditLogs             (depends on: users)
+  STEP 13: settings              (no dependencies)
+
+The built-in JSON import and Supabase migration already follow this order.
+
+
+================================================================================
+12. TROUBLESHOOTING & RECOMMENDATIONS
+================================================================================
+
+ISSUE: App shows no data after browser update or clearing history
+  CAUSE:  Browser data (IndexedDB) was cleared.
+  FIX:    Restore from a JSON backup file (Section 5).
+  PREVENT: Enable auto-backup and store files externally.
+
+ISSUE: "Import failed" when restoring a JSON backup
+  CAUSE:  File is corrupted, wrong format, or missing required fields.
+  FIX:    Ensure the file was exported from this app. Do not manually edit it.
+          Check that the file extension is .json and it is not zipped.
+
+ISSUE: Excel import shows "0 products imported"
+  CAUSE:  Column headers do not match expected names, or all rows are duplicates.
+  FIX:    Download the template from the Import/Export page and use it as a base.
+          Check that "Product Name" column is present and filled.
+
+ISSUE: Supabase connection fails
+  CAUSE:  Wrong URL or key, RLS blocking access, or network issue.
+  FIX:    Double-check credentials. Verify RLS policies allow anon access.
+          Check browser console for the exact error message.
+
+ISSUE: Data on one device is not visible on another device
+  CAUSE:  Both devices are in Local (IndexedDB) mode, not Supabase mode.
+  FIX:    Configure Supabase on both devices with the same credentials.
+          Then migrate local data from one device (Section 8).
+
+ISSUE: User cannot log in after a backup restore
+  CAUSE:  User passwords are PBKDF2-hashed — they are preserved in backups.
+          The issue may be a username mismatch or wrong password.
+  FIX:    Log in as Administrator and use "Reset PW" from the Users page.
+
+ISSUE: Large Excel files fail to import
+  CAUSE:  Browser memory limits or file size.
+  FIX:    Split large files into batches of 200-300 rows each.
+
+-----------------------------------------------------------------------
+GENERAL RECOMMENDATIONS
+-----------------------------------------------------------------------
+
+  1. BACKUP SCHEDULE
+     - Download a JSON backup at least once per week.
+     - Store backups in at least 2 locations (local + cloud storage).
+     - Before any bulk import, always take a Restore Point + JSON backup.
+
+  2. BROWSER CHOICE
+     - Use Google Chrome or Microsoft Edge for best IndexedDB performance.
+     - Avoid Safari for primary use — it has stricter storage limits.
+     - Do not use Incognito/Private mode — data is erased when the window closes.
+
+  3. MULTI-USER SETUP
+     - For multiple staff sharing the same data: use Supabase (Section 7).
+     - In local mode: each device/browser is a separate database.
+     - Syncing between local devices is only possible via JSON backup file.
+
+  4. DATA INTEGRITY
+     - Do not manually edit JSON backup files.
+     - Do not clear browser site data without first downloading a backup.
+     - Deactivate users instead of deleting them to preserve transaction history.
+     - Never delete inventory transactions — use correction transactions instead.
+
+  5. SUPABASE FREE TIER LIMITS (as of 2026)
+     - 500 MB database storage
+     - 5 GB bandwidth per month
+     - 50,000 monthly active users
+     - Projects pause after 1 week of inactivity (free tier)
+     - Upgrade to Pro (~$25/month) for always-on and higher limits.
+
+  6. SECURITY
+     - The Administrator account should only be used for user management.
+     - Regular staff should have Role = Staff.
+     - Change default passwords immediately after creating new user accounts.
+     - The Supabase Anon Key is safe to use in the frontend (it is public).
+       Never use the Supabase Service Role key in the app.
+
+================================================================================
+END OF REPORT
+Report covers: Local IndexedDB setup, JSON import/export, Excel import,
+Supabase cloud setup (including full SQL schema), migration, restore points,
+automated backups, data relationships, and troubleshooting.
+================================================================================
