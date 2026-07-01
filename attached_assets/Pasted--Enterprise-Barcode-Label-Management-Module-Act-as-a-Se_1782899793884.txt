@@ -1,0 +1,518 @@
+# Enterprise Barcode & Label Management Module
+
+Act as a Senior Software Architect, Senior React Engineer, Senior UX Designer, and Inventory Management Specialist.
+
+## Goal
+
+Upgrade the existing Barcode module into a complete Enterprise Barcode & Label Management System.
+
+This application is already running in production using:
+
+* React
+* TypeScript
+* Vite
+* Supabase
+* Vercel
+* Progressive Web App (PWA)
+
+The existing architecture must be preserved.
+
+---
+
+# IMPORTANT REQUIREMENTS
+
+Do NOT:
+
+* redesign the application
+* change routing
+* change project structure
+* change authentication
+* change authorization
+* modify existing inventory workflow
+* remove existing functionality
+
+Only extend the current barcode module using the existing architecture and coding style.
+
+---
+
+# 1. Barcode Standards
+
+Support:
+
+* Code 128 (default)
+* QR Code
+* Code 39
+* EAN-13
+* UPC-A
+
+Default:
+
+Products → Code 128
+
+Assets → QR Code (configurable)
+
+Administrator can change the default type.
+
+---
+
+# 2. Automatic Barcode Generation
+
+Instead of requiring manual barcode entry, support automatic generation.
+
+Example:
+
+Products
+
+PRD-000001
+
+PRD-000002
+
+PRD-000003
+
+Assets
+
+AST-000001
+
+AST-000002
+
+Administrator can configure:
+
+* prefix
+* starting number
+* padding length
+* generation format
+
+Manual barcode entry must still be supported.
+
+Never generate duplicate barcodes.
+
+---
+
+# 3. Barcode Settings
+
+Create an Administrator-only settings page.
+
+Configurable options:
+
+* default barcode type
+* default label size
+* barcode prefix
+* numbering format
+* auto-generate on product creation
+* auto-generate on asset creation
+* default number of labels
+* company logo
+* clinic name
+* show warehouse
+* show expiry
+* show unit
+* show asset number
+* show product category
+
+Store settings in Supabase.
+
+---
+
+# 4. Label Templates
+
+Support multiple templates.
+
+Small Label
+
+Medium Label
+
+Large Label
+
+QR Asset Label
+
+Administrator can create/edit templates inside the application.
+
+Templates should support:
+
+Company Logo
+
+Clinic Name
+
+Barcode
+
+QR
+
+Product Name
+
+Asset Name
+
+Warehouse
+
+Unit
+
+Expiry
+
+Batch
+
+Asset Number
+
+FA Number
+
+FY Number
+
+Serial Number
+
+Custom Footer
+
+---
+
+# 5. Batch Printing
+
+Allow:
+
+Print
+
+1
+
+5
+
+10
+
+20
+
+50
+
+100
+
+custom quantity
+
+Support selecting multiple products/assets.
+
+Example:
+
+☑ Product A
+
+☑ Product B
+
+☑ Asset C
+
+↓
+
+Print Selected
+
+---
+
+# 6. Barcode Scanner Support
+
+Support keyboard barcode scanners.
+
+The application should automatically detect scanner input.
+
+Workflow:
+
+Scan barcode
+
+↓
+
+Automatically locate item
+
+↓
+
+Open details
+
+↓
+
+Allow inventory transaction
+
+↓
+
+Focus returns to scan field
+
+No manual search should be required.
+
+---
+
+# 7. Camera Scanner (PWA)
+
+Since the application is a Progressive Web App:
+
+Integrate a camera scanner using a production-ready library.
+
+Recommended:
+
+@zxing/browser
+
+or
+
+html5-qrcode
+
+Requirements:
+
+works on Android
+
+works on iPhone
+
+works inside installed PWA
+
+works inside browser
+
+permission handling
+
+flash toggle
+
+camera selection
+
+continuous scanning mode
+
+single scan mode
+
+---
+
+# 8. Barcode Search
+
+Scanning or entering a barcode should locate:
+
+Products
+
+Assets
+
+Equipment
+
+Future modules
+
+Search must be instant.
+
+---
+
+# 9. Asset Integration
+
+Barcode module must support Assets & Equipment.
+
+Asset labels should display:
+
+QR Code
+
+Asset Name
+
+Asset Number
+
+FA Number
+
+FY Number
+
+Serial Number
+
+Current Custodian
+
+Status
+
+---
+
+# 10. Printing
+
+Support browser printing with responsive layouts.
+
+Optimise for:
+
+A4 paper
+
+thermal label printers
+
+future Zebra printers
+
+future Brother printers
+
+future DYMO printers
+
+Create clean print CSS.
+
+---
+
+# 11. Database
+
+Use existing architecture.
+
+Do NOT duplicate product information.
+
+Store only:
+
+barcode settings
+
+label templates
+
+barcode history (optional)
+
+Reuse existing Product and Asset tables.
+
+---
+
+# 12. Barcode History
+
+Log:
+
+barcode generated
+
+barcode regenerated
+
+label printed
+
+user
+
+date
+
+item
+
+Audit Log integration required.
+
+---
+
+# 13. Performance
+
+Optimise for:
+
+React Query caching
+
+minimal Supabase requests
+
+lazy loading
+
+memoization
+
+batch operations
+
+Avoid duplicate queries.
+
+---
+
+# 14. Security
+
+Administrator-only:
+
+Barcode settings
+
+Template editing
+
+Barcode regeneration
+
+Everyone with inventory permissions may:
+
+Print labels
+
+Scan labels
+
+Search by barcode
+
+Never expose internal IDs.
+
+---
+
+# 15. Mobile UX
+
+The module must work perfectly on:
+
+Desktop
+
+Tablet
+
+Android
+
+iPhone
+
+Installed PWA
+
+Touch-friendly controls.
+
+---
+
+# 16. Accessibility
+
+Keyboard navigation
+
+High contrast
+
+Screen reader compatibility
+
+Large touch targets
+
+---
+
+# 17. Error Handling
+
+Handle:
+
+camera unavailable
+
+permission denied
+
+duplicate barcode
+
+invalid barcode
+
+printer unavailable
+
+offline mode
+
+network interruption
+
+Graceful recovery required.
+
+---
+
+# 18. Offline (PWA)
+
+When offline:
+
+Previously cached products/assets remain searchable.
+
+Camera scanning continues to work.
+
+Barcode generation continues for locally cached items.
+
+Printing remains available.
+
+Synchronize pending barcode logs automatically when the connection returns.
+
+---
+
+# 19. Future Compatibility
+
+Design the module so it can later support:
+
+Desktop Electron version
+
+SQLite
+
+USB barcode scanners
+
+USB label printers
+
+Bluetooth scanners
+
+Bluetooth printers
+
+without requiring major architectural changes.
+
+---
+
+# 20. Final Validation
+
+Before completing:
+
+* Run TypeScript checks.
+* Run production build.
+* Verify no existing functionality is broken.
+* Verify Products and Assets both work.
+* Verify PWA compatibility.
+* Verify responsive layout.
+* Verify no performance regressions.
+* Verify Supabase queries are optimized.
+* Verify all changes follow the existing project architecture.
+
+Finally produce a summary listing:
+
+Files changed
+
+Database changes
+
+New features
+
+Performance improvements
+
+Security improvements
+
+Future extension points
