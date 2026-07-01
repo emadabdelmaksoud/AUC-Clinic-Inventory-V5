@@ -268,6 +268,7 @@ function AssetForm({ onClose, editing, types, categories }: {
 
   const selectedTypeId = form.watch("assetTypeId");
   const custodianType = form.watch("custodianType");
+  const custodianUserId = form.watch("custodianUserId");
   const filteredCats = categories.filter(c => c.assetTypeId === selectedTypeId);
 
   const prevTypeRef = useState(selectedTypeId)[0];
@@ -276,22 +277,39 @@ function AssetForm({ onClose, editing, types, categories }: {
   }, [selectedTypeId]);
 
   useEffect(() => {
-    if (custodianType === "external_staff") form.setValue("custodianUserId", "");
+    if (custodianType === "external_staff") {
+      form.setValue("custodianUserId", "", { shouldDirty: true });
+    }
+    if (!custodianType) {
+      const opts = { shouldDirty: true } as const;
+      form.setValue("custodianUserId", "", opts);
+      form.setValue("custodianName", "", opts);
+      form.setValue("custodianPhone", "", opts);
+      form.setValue("custodianEmail", "", opts);
+      form.setValue("custodianIdNumber", "", opts);
+    }
   }, [custodianType]);
 
-  const handleUserSelect = (userId: string) => {
-    form.setValue("custodianUserId", userId);
-    form.setValue("custodianName", "");
-    form.setValue("custodianPhone", "");
-    form.setValue("custodianEmail", "");
-    form.setValue("custodianIdNumber", "");
-    const u = users.find(u => u.id === userId);
+  // Sync selected user's data into form fields whenever custodianUserId changes
+  useEffect(() => {
+    if (custodianType !== "system_user") return;
+    const opts = { shouldDirty: true, shouldTouch: true } as const;
+    const u = users.find(u => u.id === custodianUserId);
     if (u) {
-      form.setValue("custodianName", u.fullName || u.username);
-      form.setValue("custodianPhone", u.phone ?? "");
-      form.setValue("custodianEmail", u.email ?? "");
-      form.setValue("custodianIdNumber", u.employeeId ?? "");
+      form.setValue("custodianName", u.fullName || u.username, opts);
+      form.setValue("custodianPhone", u.phone ?? "", opts);
+      form.setValue("custodianEmail", u.email ?? "", opts);
+      form.setValue("custodianIdNumber", u.employeeId ?? "", opts);
+    } else {
+      form.setValue("custodianName", "", opts);
+      form.setValue("custodianPhone", "", opts);
+      form.setValue("custodianEmail", "", opts);
+      form.setValue("custodianIdNumber", "", opts);
     }
+  }, [custodianUserId, custodianType, users]);
+
+  const handleUserSelect = (userId: string) => {
+    form.setValue("custodianUserId", userId, { shouldDirty: true, shouldTouch: true });
   };
 
   const { data: warehouses = [] } = useQuery({ queryKey: ["warehouses"], queryFn: () => listWarehouses() });
@@ -634,20 +652,28 @@ function TransferCustodyDialog({ asset, types, categories, onClose }: {
   });
 
   const custodianType = form.watch("custodianType");
+  const custodianUserId = form.watch("custodianUserId");
+
+  // Sync selected user's data whenever custodianUserId changes
+  useEffect(() => {
+    if (custodianType !== "system_user") return;
+    const opts = { shouldDirty: true, shouldTouch: true } as const;
+    const u = users.find(u => u.id === custodianUserId);
+    if (u) {
+      form.setValue("custodianName", u.fullName || u.username, opts);
+      form.setValue("custodianPhone", u.phone ?? "", opts);
+      form.setValue("custodianEmail", u.email ?? "", opts);
+      form.setValue("custodianIdNumber", u.employeeId ?? "", opts);
+    } else {
+      form.setValue("custodianName", "", opts);
+      form.setValue("custodianPhone", "", opts);
+      form.setValue("custodianEmail", "", opts);
+      form.setValue("custodianIdNumber", "", opts);
+    }
+  }, [custodianUserId, custodianType, users]);
 
   const handleUserSelect = (userId: string) => {
-    form.setValue("custodianUserId", userId);
-    form.setValue("custodianName", "");
-    form.setValue("custodianPhone", "");
-    form.setValue("custodianEmail", "");
-    form.setValue("custodianIdNumber", "");
-    const u = users.find(u => u.id === userId);
-    if (u) {
-      form.setValue("custodianName", u.fullName || u.username);
-      form.setValue("custodianPhone", u.phone ?? "");
-      form.setValue("custodianEmail", u.email ?? "");
-      form.setValue("custodianIdNumber", u.employeeId ?? "");
-    }
+    form.setValue("custodianUserId", userId, { shouldDirty: true, shouldTouch: true });
   };
 
   const { mutate, isPending } = useMutation({
