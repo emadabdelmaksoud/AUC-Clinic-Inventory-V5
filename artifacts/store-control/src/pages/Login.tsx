@@ -76,6 +76,12 @@ export default function LoginPage() {
                 {loading ? "Signing in..." : "Sign in"}
               </Button>
             </form>
+
+            <div className="mt-4 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">First time?</span> Use{" "}
+              <span className="font-mono font-medium text-foreground">admin</span> /{" "}
+              <span className="font-mono font-medium text-foreground">admin123</span>
+            </div>
           </CardContent>
         </Card>
 
