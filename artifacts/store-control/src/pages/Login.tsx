@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isFirstTime, setIsFirstTime] = useState(false);
+
+  useEffect(() => {
+    db.users.count().then(n => setIsFirstTime(n === 0)).catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,11 +83,13 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-4 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">First time?</span> Use{" "}
-              <span className="font-mono font-medium text-foreground">admin</span> /{" "}
-              <span className="font-mono font-medium text-foreground">admin123</span>
-            </div>
+            {isFirstTime && (
+              <div className="mt-4 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">First time?</span> Use{" "}
+                <span className="font-mono font-medium text-foreground">admin</span> /{" "}
+                <span className="font-mono font-medium text-foreground">admin123</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 

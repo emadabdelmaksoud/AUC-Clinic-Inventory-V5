@@ -281,12 +281,16 @@ function AssetForm({ onClose, editing, types, categories }: {
 
   const handleUserSelect = (userId: string) => {
     form.setValue("custodianUserId", userId);
+    form.setValue("custodianName", "");
+    form.setValue("custodianPhone", "");
+    form.setValue("custodianEmail", "");
+    form.setValue("custodianIdNumber", "");
     const u = users.find(u => u.id === userId);
     if (u) {
       form.setValue("custodianName", u.fullName || u.username);
-      form.setValue("custodianPhone", u.phone || "");
-      form.setValue("custodianEmail", u.email || "");
-      form.setValue("custodianIdNumber", u.employeeId || "");
+      form.setValue("custodianPhone", u.phone ?? "");
+      form.setValue("custodianEmail", u.email ?? "");
+      form.setValue("custodianIdNumber", u.employeeId ?? "");
     }
   };
 
@@ -633,12 +637,16 @@ function TransferCustodyDialog({ asset, types, categories, onClose }: {
 
   const handleUserSelect = (userId: string) => {
     form.setValue("custodianUserId", userId);
+    form.setValue("custodianName", "");
+    form.setValue("custodianPhone", "");
+    form.setValue("custodianEmail", "");
+    form.setValue("custodianIdNumber", "");
     const u = users.find(u => u.id === userId);
     if (u) {
       form.setValue("custodianName", u.fullName || u.username);
-      form.setValue("custodianPhone", u.phone || "");
-      form.setValue("custodianEmail", u.email || "");
-      form.setValue("custodianIdNumber", u.employeeId || "");
+      form.setValue("custodianPhone", u.phone ?? "");
+      form.setValue("custodianEmail", u.email ?? "");
+      form.setValue("custodianIdNumber", u.employeeId ?? "");
     }
   };
 
