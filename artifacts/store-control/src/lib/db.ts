@@ -182,6 +182,20 @@ export interface AssetTransaction {
   createdAt: string;
 }
 
+// ── External Staff ────────────────────────────────────────────────────────────
+
+export interface ExternalStaff {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  idNumber: string | null;
+  department: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class StoreControlDB extends Dexie {
@@ -198,6 +212,7 @@ export class StoreControlDB extends Dexie {
   assetCategories!: Table<AssetCategory, string>;
   assets!: Table<Asset, string>;
   assetTransactions!: Table<AssetTransaction, string>;
+  externalStaff!: Table<ExternalStaff, string>;
 
   constructor() {
     super("StoreControlDB");
@@ -273,6 +288,9 @@ export class StoreControlDB extends Dexie {
     this.version(5).stores({
       users: "id, username, role, status, employeeId, department",
     });
+    this.version(6).stores({
+      externalStaff: "id, name, createdAt",
+    });
   }
 }
 
@@ -301,6 +319,7 @@ function makeSupabaseDB() {
     assetCategories: new SupabaseTableAdapter<AssetCategory>(client, "asset_categories"),
     assets: new SupabaseTableAdapter<Asset>(client, "assets"),
     assetTransactions: new SupabaseTableAdapter<AssetTransaction>(client, "asset_transactions"),
+    externalStaff: new SupabaseTableAdapter<ExternalStaff>(client, "external_staff"),
   };
 }
 

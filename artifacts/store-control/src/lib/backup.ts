@@ -111,9 +111,24 @@ export async function importBackup(file: File): Promise<{ imported: number }> {
         await db.users.bulkPut(usersToInsert);
       }
     } else {
-      // Local Dexie — no FK constraints, insert all, IDs stay the same.
-      await db.users.bulkPut(backupUsers);
-      for (const bu of backupUsers) userIdMap.set(bu.id, bu.id);
+      // Local Dexie — check by username to prevent duplicates (same logic as Supabase).
+      const existingUsers = await db.users.toArray();
+      const existingByUsername = new Map<string, string>(
+        existingUsers.map(u => [u.username, u.id])
+      );
+      const usersToInsert: any[] = [];
+      for (const bu of backupUsers) {
+        const existingId = existingByUsername.get(bu.username);
+        if (existingId) {
+          userIdMap.set(bu.id, existingId);
+        } else {
+          userIdMap.set(bu.id, bu.id);
+          usersToInsert.push(bu);
+        }
+      }
+      if (usersToInsert.length > 0) {
+        await db.users.bulkPut(usersToInsert);
+      }
     }
   }
 

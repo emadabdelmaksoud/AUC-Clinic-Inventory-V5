@@ -11,7 +11,9 @@ import {
   listAssetTransactions, importAssetsFromExcel, downloadImportTemplate,
   ASSET_STATUS_LABELS,
   assetSchema, type AssetInput, type AssetFilters,
+  listExternalStaff, upsertExternalStaff,
 } from "@/lib/assets";
+import { ComboboxInput } from "@/components/ui/combobox-input";
 import { listUsers } from "@/lib/auth";
 import { listWarehouses, listSections } from "@/lib/warehouses";
 import { Link } from "wouter";
@@ -209,8 +211,9 @@ function AssetForm({ onClose, editing, types, categories }: {
   const { user } = useAuth();
   const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: listUsers });
   const { data: allAssets = [] } = useQuery({ queryKey: ["assets"], queryFn: listAssets });
+  const { data: extStaffList = [] } = useQuery({ queryKey: ["externalStaff"], queryFn: listExternalStaff });
 
-  // Build external-staff lookup from all past assets (latest record wins per name)
+  // Build external-staff lookup: DB table takes priority, assets fill gaps for backward compat
   const externalCustodianMap = useMemo(() => {
     const map: Record<string, { phone: string; email: string; idNumber: string }> = {};
     for (const a of allAssets) {
@@ -222,9 +225,12 @@ function AssetForm({ onClose, editing, types, categories }: {
         };
       }
     }
+    for (const s of extStaffList) {
+      map[s.name] = { phone: s.phone || "", email: s.email || "", idNumber: s.idNumber || "" };
+    }
     return map;
-  }, [allAssets]);
-  const externalNames = useMemo(() => Object.keys(externalCustodianMap), [externalCustodianMap]);
+  }, [allAssets, extStaffList]);
+  const externalNames = useMemo(() => Object.keys(externalCustodianMap).sort(), [externalCustodianMap]);
 
   const form = useForm<AssetInput>({
     resolver: zodResolver(assetSchema),
@@ -297,10 +303,19 @@ function AssetForm({ onClose, editing, types, categories }: {
       const uName = user?.fullName || user?.username || null;
       if (editing) await updateAsset(editing.id, data, user?.id ?? null, uName);
       else await createAsset(data, user?.id ?? null, uName);
+      if (data.custodianType === "external_staff" && data.custodianName) {
+        await upsertExternalStaff({
+          name: data.custodianName,
+          phone: data.custodianPhone,
+          email: data.custodianEmail,
+          idNumber: data.custodianIdNumber,
+        });
+      }
     },
     onSuccess: () => {
       toast.success(editing ? "Asset updated" : "Asset created");
       qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: ["externalStaff"] });
       onClose();
     },
     onError: (e) => toast.error((e as Error).message),
@@ -459,11 +474,6 @@ function AssetForm({ onClose, editing, types, categories }: {
 
             {custodianType && (
               <>
-                {externalNames.length > 0 && (
-                  <datalist id="assetform-ext-custodians">
-                    {externalNames.map(n => <option key={n} value={n} />)}
-                  </datalist>
-                )}
                 <div className="grid grid-cols-2 gap-3">
                   <FormField control={form.control} name="custodianName" render={({ field }) => (
                     <FormItem>
@@ -471,24 +481,29 @@ function AssetForm({ onClose, editing, types, categories }: {
                         Full Name{custodianType === "system_user" ? " (auto-filled)" : ""}
                       </FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Custodian full name"
-                          readOnly={custodianType === "system_user"}
-                          list={custodianType === "external_staff" && externalNames.length > 0 ? "assetform-ext-custodians" : undefined}
-                          onChange={e => {
-                            field.onChange(e);
-                            if (custodianType === "external_staff") {
-                              const match = externalCustodianMap[e.target.value];
+                        {custodianType === "external_staff" ? (
+                          <ComboboxInput
+                            value={field.value ?? ""}
+                            onChange={name => {
+                              field.onChange(name);
+                              const match = externalCustodianMap[name];
                               if (match) {
                                 form.setValue("custodianPhone", match.phone);
                                 form.setValue("custodianEmail", match.email);
                                 form.setValue("custodianIdNumber", match.idNumber);
                               }
-                            }
-                          }}
-                        />
+                            }}
+                            options={externalNames}
+                            placeholder="Type or select external staff…"
+                          />
+                        ) : (
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder="Custodian full name"
+                            readOnly
+                          />
+                        )}
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -567,8 +582,9 @@ function TransferCustodyDialog({ asset, types, categories, onClose }: {
   const { user } = useAuth();
   const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: listUsers });
   const { data: allAssets = [] } = useQuery({ queryKey: ["assets"], queryFn: listAssets });
+  const { data: extStaffList = [] } = useQuery({ queryKey: ["externalStaff"], queryFn: listExternalStaff });
 
-  // Build external-staff lookup from all past assets
+  // Build external-staff lookup: DB table takes priority, assets fill gaps for backward compat
   const externalCustodianMap = useMemo(() => {
     const map: Record<string, { phone: string; email: string; idNumber: string }> = {};
     for (const a of allAssets) {
@@ -580,9 +596,12 @@ function TransferCustodyDialog({ asset, types, categories, onClose }: {
         };
       }
     }
+    for (const s of extStaffList) {
+      map[s.name] = { phone: s.phone || "", email: s.email || "", idNumber: s.idNumber || "" };
+    }
     return map;
-  }, [allAssets]);
-  const externalNames = useMemo(() => Object.keys(externalCustodianMap), [externalCustodianMap]);
+  }, [allAssets, extStaffList]);
+  const externalNames = useMemo(() => Object.keys(externalCustodianMap).sort(), [externalCustodianMap]);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -626,11 +645,20 @@ function TransferCustodyDialog({ asset, types, categories, onClose }: {
   const { mutate, isPending } = useMutation({
     mutationFn: async (data: AssetInput) => {
       await updateAsset(asset.id, data, user?.id ?? null);
+      if (data.custodianType === "external_staff" && data.custodianName) {
+        await upsertExternalStaff({
+          name: data.custodianName,
+          phone: data.custodianPhone,
+          email: data.custodianEmail,
+          idNumber: data.custodianIdNumber,
+        });
+      }
     },
     onSuccess: () => {
       toast.success("Custody transferred successfully");
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["myAssets"] });
+      qc.invalidateQueries({ queryKey: ["externalStaff"] });
       onClose();
     },
     onError: (e) => toast.error((e as Error).message),
@@ -708,11 +736,6 @@ function TransferCustodyDialog({ asset, types, categories, onClose }: {
 
             {custodianType && (
               <>
-                {externalNames.length > 0 && (
-                  <datalist id="transfer-ext-custodians">
-                    {externalNames.map(n => <option key={n} value={n} />)}
-                  </datalist>
-                )}
                 <div className="grid grid-cols-2 gap-3">
                   <FormField control={form.control} name="custodianName" render={({ field }) => (
                     <FormItem>
@@ -720,24 +743,29 @@ function TransferCustodyDialog({ asset, types, categories, onClose }: {
                         Full Name{custodianType === "system_user" ? " (auto-filled)" : ""}
                       </FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="Custodian full name"
-                          readOnly={custodianType === "system_user"}
-                          list={custodianType === "external_staff" && externalNames.length > 0 ? "transfer-ext-custodians" : undefined}
-                          onChange={e => {
-                            field.onChange(e);
-                            if (custodianType === "external_staff") {
-                              const match = externalCustodianMap[e.target.value];
+                        {custodianType === "external_staff" ? (
+                          <ComboboxInput
+                            value={field.value ?? ""}
+                            onChange={name => {
+                              field.onChange(name);
+                              const match = externalCustodianMap[name];
                               if (match) {
                                 form.setValue("custodianPhone", match.phone);
                                 form.setValue("custodianEmail", match.email);
                                 form.setValue("custodianIdNumber", match.idNumber);
                               }
-                            }
-                          }}
-                        />
+                            }}
+                            options={externalNames}
+                            placeholder="Type or select external staff…"
+                          />
+                        ) : (
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder="Custodian full name"
+                            readOnly
+                          />
+                        )}
                       </FormControl>
                       <FormMessage />
                     </FormItem>

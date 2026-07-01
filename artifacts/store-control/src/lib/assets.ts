@@ -2,8 +2,54 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { z } from "zod";
-import { db, generateId, now, type AssetType, type AssetCategory, type Asset, type AssetStatus, type AssetTransaction } from "./db";
+import { db, generateId, now, type AssetType, type AssetCategory, type Asset, type AssetStatus, type AssetTransaction, type ExternalStaff } from "./db";
 import { sanitizeXlsxCell } from "./utils";
+
+// ── External Staff ────────────────────────────────────────────────────────────
+
+export async function listExternalStaff(): Promise<ExternalStaff[]> {
+  const all = await db.externalStaff.toArray();
+  return all.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function upsertExternalStaff(staff: {
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  idNumber?: string | null;
+  department?: string | null;
+  notes?: string | null;
+}): Promise<void> {
+  if (!staff.name?.trim()) return;
+  const nameLower = staff.name.trim().toLowerCase();
+  const existing = await db.externalStaff
+    .filter(s => s.name.toLowerCase() === nameLower)
+    .first();
+  const timestamp = now();
+  if (existing) {
+    await db.externalStaff.put({
+      ...existing,
+      phone: staff.phone ?? existing.phone,
+      email: staff.email ?? existing.email,
+      idNumber: staff.idNumber ?? existing.idNumber,
+      department: staff.department ?? existing.department,
+      notes: staff.notes ?? existing.notes,
+      updatedAt: timestamp,
+    });
+  } else {
+    await db.externalStaff.add({
+      id: generateId(),
+      name: staff.name.trim(),
+      phone: staff.phone ?? null,
+      email: staff.email ?? null,
+      idNumber: staff.idNumber ?? null,
+      department: staff.department ?? null,
+      notes: staff.notes ?? null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+  }
+}
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
