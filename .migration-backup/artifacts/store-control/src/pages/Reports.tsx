@@ -201,17 +201,14 @@ export default function ReportsPage() {
   }
 
   function handleExportStockExcel() {
-    if (filteredStock.length === 0) return toast.error("No stock data to export");
+    if (filteredStock.length === 0) { toast.error("No stock data to export"); return; }
     exportStockSummaryExcel(filteredStock).catch(e => toast.error(e.message));
     toast.success("Stock summary exported");
   }
 
   function handleExportTxnsExcel() {
-    if (filteredTxns.length === 0)
-      return toast.error("No transactions match the current filters");
-    exportTransactionsExcel(filteredTxns, "transactions").catch(e =>
-      toast.error(e.message)
-    );
+    if (filteredTxns.length === 0) { toast.error("No transactions match the current filters"); return; }
+    exportTransactionsExcel(filteredTxns, "transactions").catch(e => toast.error(e.message));
     toast.success(`Exported ${filteredTxns.length} transactions`);
   }
 

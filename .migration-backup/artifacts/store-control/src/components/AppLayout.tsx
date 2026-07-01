@@ -60,7 +60,7 @@ function useSidebarNav() {
     queryKey: ["nav_purchase_request_badge"],
     queryFn: async () => {
       try {
-        const all = await db.purchaseRequests?.toArray?.();
+        const all = await (db as any).purchaseRequests?.toArray?.();
         if (!all) return 0;
         return all.filter((r: any) => r.status === "pending").length;
       } catch {

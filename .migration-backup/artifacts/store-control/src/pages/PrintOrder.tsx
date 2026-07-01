@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Printer, Plus, Trash2, Search, ClipboardEdit, X } from "lucide-react";
 import { toast } from "sonner";
+import { escapeHtml } from "@/lib/utils";
 import type { Product } from "@/lib/db";
 
 interface OrderItem {
@@ -168,10 +169,10 @@ export default function PrintOrderPage() {
     const rows = items.map((it, i) => `
       <tr>
         <td>${i + 1}</td>
-        <td><strong>${it.productName}</strong><br><small style="color:#666">${it.productCode}${it.category ? ` · ${it.category}` : ""}</small></td>
+        <td><strong>${escapeHtml(it.productName)}</strong><br><small style="color:#666">${escapeHtml(it.productCode)}${it.category ? ` · ${escapeHtml(it.category)}` : ""}</small></td>
         <td style="text-align:center;font-size:16px;font-weight:700">${it.quantity}</td>
-        <td style="text-align:center">${it.unitName}</td>
-        <td>${it.notes || ""}</td>
+        <td style="text-align:center">${escapeHtml(it.unitName)}</td>
+        <td>${escapeHtml(it.notes)}</td>
       </tr>`).join("");
 
     const win = window.open("", "_blank");
@@ -197,22 +198,22 @@ export default function PrintOrderPage() {
 <div class="header-block">
   <div>
     <div class="clinic-name">AUC Clinic Inventory System</div>
-    <div class="order-title">${header.title}</div>
-    <div class="meta">Order No: <strong>${header.orderNumber}</strong></div>
+    <div class="order-title">${escapeHtml(header.title)}</div>
+    <div class="meta">Order No: <strong>${escapeHtml(header.orderNumber)}</strong></div>
     <div class="meta">Date: <strong>${dateStr}</strong></div>
-    ${header.recipientName ? `<div class="meta">Recipient: <strong>${header.recipientName}</strong></div>` : ""}
-    ${header.recipientDept ? `<div class="meta">Department: <strong>${header.recipientDept}</strong></div>` : ""}
+    ${header.recipientName ? `<div class="meta">Recipient: <strong>${escapeHtml(header.recipientName)}</strong></div>` : ""}
+    ${header.recipientDept ? `<div class="meta">Department: <strong>${escapeHtml(header.recipientDept)}</strong></div>` : ""}
   </div>
 </div>
 <table>
 <thead><tr><th style="width:32px">#</th><th>Product</th><th style="width:70px;text-align:center">Qty</th><th style="width:80px;text-align:center">Unit</th><th>Notes / Specification</th></tr></thead>
 <tbody>${rows}</tbody>
 </table>
-${header.notes ? `<div class="notes-box"><strong>Order Notes:</strong> ${header.notes}</div>` : ""}
+${header.notes ? `<div class="notes-box"><strong>Order Notes:</strong> ${escapeHtml(header.notes)}</div>` : ""}
 <div class="sig-row">
   <div class="sig-box">
     <div style="font-size:11px;color:#555">Prepared by</div>
-    <div class="sig-line">${user?.fullName ?? user?.username ?? ""}</div>
+    <div class="sig-line">${escapeHtml(user?.fullName ?? user?.username)}</div>
   </div>
   <div class="sig-box">
     <div style="font-size:11px;color:#555">Approved by</div>

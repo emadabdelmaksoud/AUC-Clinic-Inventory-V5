@@ -15,6 +15,7 @@ import { Download, Printer, Users, Search, X, Activity, Package, TrendingDown, A
 import { toast } from "sonner";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
+import { escapeHtml, sanitizeXlsxCell } from "@/lib/utils";
 
 const TXN_TYPES: TransactionType[] = [
   "stock_in", "dispensing", "transfer_in", "transfer_out", "disposal", "adjustment", "inventory_count",
@@ -52,7 +53,7 @@ interface StaffRow {
 
 export default function StaffReportPage() {
   const { user } = useAuth();
-  const isAdmin = can(user?.role, "users", "read");
+  const isAdmin = can(user?.role, "users", "view");
 
   const today = new Date().toISOString().slice(0, 10);
   const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
@@ -180,20 +181,20 @@ export default function StaffReportPage() {
       ...filtered.map(r => [
         r.createdAt.slice(0, 10),
         r.createdAt.slice(11, 19),
-        r.performedByName,
-        TRANSACTION_LABELS[r.transactionType] ?? r.transactionType,
-        r.productName,
-        r.productCode,
-        r.category ?? "",
+        sanitizeXlsxCell(r.performedByName),
+        sanitizeXlsxCell(TRANSACTION_LABELS[r.transactionType] ?? r.transactionType),
+        sanitizeXlsxCell(r.productName),
+        sanitizeXlsxCell(r.productCode),
+        sanitizeXlsxCell(r.category),
         r.quantity,
-        r.unitName ?? r.baseUnit,
+        sanitizeXlsxCell(r.unitName ?? r.baseUnit),
         r.quantityBaseUnit,
-        r.baseUnit,
-        r.warehouseName,
-        r.sectionName ?? "",
-        r.batchNumber ?? "",
-        r.expiryDate ?? "",
-        r.notes ?? "",
+        sanitizeXlsxCell(r.baseUnit),
+        sanitizeXlsxCell(r.warehouseName),
+        sanitizeXlsxCell(r.sectionName),
+        sanitizeXlsxCell(r.batchNumber),
+        sanitizeXlsxCell(r.expiryDate),
+        sanitizeXlsxCell(r.notes),
       ]),
       [],
       [`Total Transactions: ${filtered.length}`],
@@ -212,13 +213,13 @@ export default function StaffReportPage() {
       <tr>
         <td>${i + 1}</td>
         <td>${r.createdAt.slice(0, 10)}<br><small>${r.createdAt.slice(11, 16)}</small></td>
-        <td><strong>${r.performedByName}</strong></td>
+        <td><strong>${escapeHtml(r.performedByName)}</strong></td>
         <td style="font-size:10px;white-space:nowrap">${TRANSACTION_LABELS[r.transactionType] ?? r.transactionType}</td>
-        <td><strong>${r.productName}</strong><br><small>${r.productCode}</small></td>
-        <td style="text-align:right">${r.quantity} ${r.unitName ?? r.baseUnit}</td>
-        <td>${r.warehouseName}${r.sectionName ? ` / ${r.sectionName}` : ""}</td>
-        <td>${r.batchNumber ?? ""}${r.expiryDate ? `<br><small>${r.expiryDate}</small>` : ""}</td>
-        <td style="font-size:10px">${r.notes ?? ""}</td>
+        <td><strong>${escapeHtml(r.productName)}</strong><br><small>${escapeHtml(r.productCode)}</small></td>
+        <td style="text-align:right">${r.quantity} ${escapeHtml(r.unitName ?? r.baseUnit)}</td>
+        <td>${escapeHtml(r.warehouseName)}${r.sectionName ? ` / ${escapeHtml(r.sectionName)}` : ""}</td>
+        <td>${escapeHtml(r.batchNumber)}${r.expiryDate ? `<br><small>${escapeHtml(r.expiryDate)}</small>` : ""}</td>
+        <td style="font-size:10px">${escapeHtml(r.notes)}</td>
       </tr>`).join("");
 
     const win = window.open("", "_blank");
@@ -232,7 +233,7 @@ tr:nth-child(even) td{background:#f9fafb}
 small{color:#888}
 @media print{@page{size:A4 landscape;margin:12mm}}</style></head><body>
 <h2>AUC Clinic Inventory — Staff Activity Report</h2>
-<div class="meta">Period: ${dateFrom} to ${dateTo} | ${isAdmin && staffId !== "all" ? `Staff: ${users.find(u => u.id === staffId)?.fullName ?? ""}  | ` : ""}Total: ${filtered.length} transactions | Generated: ${new Date().toLocaleString()}</div>
+<div class="meta">Period: ${dateFrom} to ${dateTo} | ${isAdmin && staffId !== "all" ? `Staff: ${escapeHtml(users.find(u => u.id === staffId)?.fullName)}  | ` : ""}Total: ${filtered.length} transactions | Generated: ${new Date().toLocaleString()}</div>
 <table><thead><tr><th>#</th><th>Date/Time</th><th>Staff</th><th>Type</th><th>Product</th><th>Qty</th><th>Warehouse</th><th>Batch</th><th>Notes</th></tr></thead>
 <tbody>${rows_html}</tbody></table>
 <div style="margin-top:8px;font-size:10px;color:#555">Total: ${filtered.length} transactions</div>

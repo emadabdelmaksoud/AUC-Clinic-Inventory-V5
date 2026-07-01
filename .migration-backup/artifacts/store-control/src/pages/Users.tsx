@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert, UserCircle, XCircle } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { CheckCircle2, Plus, Trash2, Key, Users, Eye, EyeOff, ShieldCheck, Crown, ShieldAlert, UserCircle, XCircle, MoreVertical } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -61,7 +62,7 @@ function AccessDeniedNote() {
   );
 }
 
-function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole: AppRole }) {
+function CreateUserForm({ onClose, actorRole, actorId }: { onClose: () => void; actorRole: AppRole; actorId?: string }) {
   const qc = useQueryClient();
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
@@ -78,7 +79,7 @@ function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole
     }
     setSaving(true);
     try {
-      await createUser({ username, fullName, password, role });
+      await createUser({ username, fullName, password, role }, actorId);
       toast.success("User created");
       qc.invalidateQueries({ queryKey: ["users"] });
       onClose();
@@ -134,7 +135,7 @@ function CreateUserForm({ onClose, actorRole }: { onClose: () => void; actorRole
   );
 }
 
-function ResetPasswordForm({ userId, userName, actorRole, onClose }: { userId: string; userName: string; actorRole: AppRole; onClose: () => void }) {
+function ResetPasswordForm({ userId, userName, actorRole, actorId, onClose }: { userId: string; userName: string; actorRole: AppRole; actorId?: string; onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -146,7 +147,7 @@ function ResetPasswordForm({ userId, userName, actorRole, onClose }: { userId: s
     if (password !== confirm) { toast.error("Passwords do not match"); return; }
     setSaving(true);
     try {
-      await updateUserPassword(userId, password, actorRole);
+      await updateUserPassword(userId, password, actorRole, actorId);
       toast.success(`Password reset for ${userName}`);
       onClose();
     } catch (err) {
@@ -196,7 +197,7 @@ export default function UsersPage() {
   const { data: users = [], isLoading } = useQuery({ queryKey: ["users"], queryFn: listUsers });
 
   const { mutate: doDelete } = useMutation({
-    mutationFn: (id: string) => deleteUser(id),
+    mutationFn: (id: string) => deleteUser(id, currentUser?.id),
     onSuccess: () => {
       toast.success("User deleted");
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -226,7 +227,7 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4 w-full">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Users className="w-6 h-6" /> Users</h1>
@@ -263,12 +264,12 @@ export default function UsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
-                <th className="text-left px-4 py-3 font-medium">User</th>
-                <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Username</th>
-                <th className="text-left px-4 py-3 font-medium">Role</th>
-                <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Status</th>
-                <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Created</th>
-                <th className="px-4 py-3 text-right font-medium">Actions</th>
+                <th className="text-left px-3 py-3 font-medium">User</th>
+                <th className="text-left px-3 py-3 font-medium hidden sm:table-cell">Username</th>
+                <th className="text-left px-3 py-3 font-medium">Role</th>
+                <th className="text-left px-3 py-3 font-medium hidden md:table-cell">Status</th>
+                <th className="text-left px-3 py-3 font-medium hidden lg:table-cell">Created</th>
+                <th className="px-3 py-3 text-right font-medium w-36">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -276,68 +277,84 @@ export default function UsersPage() {
                 const isProtected = u.role === "administrator";
                 const actorCanManage = canManageUser(currentUser?.role, u.role);
                 const isActive = (u.status || "active") === "active";
+                const showMenu = canManage && actorCanManage && u.id !== currentUser?.id;
+                const showProtected = canManage && !actorCanManage;
                 return (
                   <tr key={u.id} className={`hover:bg-muted/30 ${!isActive ? "opacity-60" : ""} ${isProtected ? "bg-purple-50/40 dark:bg-purple-950/10" : ""}`}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
+                    <td className="px-3 py-3 min-w-0">
+                      <div className="flex items-center gap-2">
                         <UserAvatar name={u.fullName || u.username} photoUrl={u.photoUrl} size={8} />
-                        <div>
-                          <div className="font-medium leading-tight">{u.fullName}</div>
-                          {u.department && <div className="text-xs text-muted-foreground">{u.department}{u.position ? ` · ${u.position}` : ""}</div>}
+                        <div className="min-w-0">
+                          <div className="font-medium leading-tight truncate max-w-[120px] sm:max-w-none">{u.fullName || u.username}</div>
+                          {u.department && <div className="text-xs text-muted-foreground truncate max-w-[120px] sm:max-w-none">{u.department}{u.position ? ` · ${u.position}` : ""}</div>}
                           {u.id === currentUser?.id && <span className="text-xs text-primary">(You)</span>}
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 hidden sm:table-cell font-mono text-xs text-muted-foreground">{u.username}</td>
-                    <td className="px-4 py-3"><RoleBadge role={u.role as AppRole} /></td>
-                    <td className="px-4 py-3 hidden md:table-cell">
+                    <td className="px-3 py-3 hidden sm:table-cell font-mono text-xs text-muted-foreground whitespace-nowrap">{u.username}</td>
+                    <td className="px-3 py-3"><RoleBadge role={u.role as AppRole} /></td>
+                    <td className="px-3 py-3 hidden md:table-cell">
                       {isActive
-                        ? <Badge className="text-xs gap-1 bg-green-100 text-green-800 border-green-200 hover:bg-green-100"><CheckCircle2 className="w-3 h-3" /> Active</Badge>
-                        : <Badge className="text-xs gap-1 bg-red-100 text-red-800 border-red-200 hover:bg-red-100"><XCircle className="w-3 h-3" /> Inactive</Badge>
+                        ? <Badge className="text-xs gap-1 bg-green-100 text-green-800 border-green-200 hover:bg-green-100 whitespace-nowrap"><CheckCircle2 className="w-3 h-3" /> Active</Badge>
+                        : <Badge className="text-xs gap-1 bg-red-100 text-red-800 border-red-200 hover:bg-red-100 whitespace-nowrap"><XCircle className="w-3 h-3" /> Inactive</Badge>
                       }
                     </td>
-                    <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground text-xs">
+                    <td className="px-3 py-3 hidden lg:table-cell text-muted-foreground text-xs whitespace-nowrap">
                       {format(new Date(u.createdAt), "MMM d, yyyy")}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5 justify-end flex-wrap">
+                    <td className="px-3 py-3 w-36">
+                      <div className="flex items-center gap-1 justify-end">
                         <Link href={`/users/${u.id}`}>
-                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5">
-                            <UserCircle className="w-3 h-3" /> View Profile
+                          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 font-medium whitespace-nowrap">
+                            <UserCircle className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">View Profile</span>
                           </Button>
                         </Link>
-                        {canManage && !actorCanManage && (
-                          <span className="text-xs text-muted-foreground flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Protected</span>
-                        )}
-                        {canManage && actorCanManage && u.id !== currentUser?.id && (
-                          <>
-                            <Button
-                              size="sm" variant="outline"
-                              className={`h-7 text-xs gap-1.5 ${isActive ? "text-amber-600 border-amber-300 hover:bg-amber-50" : "text-green-600 border-green-300 hover:bg-green-50"}`}
-                              onClick={() => toggleStatus(u)}
-                              title={isActive ? "Deactivate user" : "Activate user"}
-                            >
-                              {isActive ? <XCircle className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
-                              {isActive ? "Deactivate" : "Activate"}
-                            </Button>
-                            {canResetPassword(currentUser?.role) && (
-                              <Button
-                                size="sm" variant="outline" className="h-7 text-xs gap-1.5"
-                                onClick={() => setResetPwUser({ id: u.id, name: u.fullName || u.username, role: u.role as AppRole })}
-                              >
-                                <Key className="w-3 h-3" /> Reset PW
-                              </Button>
-                            )}
-                            {isSuperAdmin(currentUser?.role) && (
-                              <Button
-                                size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                                title="Delete user" onClick={() => setDeleteId(u.id)}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                          </>
-                        )}
+                        {/* Fixed-width 32px slot — keeps View Profile vertically aligned across all rows */}
+                        <div className="w-8 flex items-center justify-center flex-shrink-0">
+                          {showProtected && (
+                            <span title="Administrator — protected account">
+                              <ShieldAlert className="w-4 h-4 text-purple-500" />
+                            </span>
+                          )}
+                          {showMenu && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-44">
+                                {canResetPassword(currentUser?.role) && (
+                                  <DropdownMenuItem
+                                    className="gap-2 text-sm cursor-pointer"
+                                    onClick={() => setResetPwUser({ id: u.id, name: u.fullName || u.username, role: u.role as AppRole })}
+                                  >
+                                    <Key className="w-3.5 h-3.5" /> Reset PW
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  className={`gap-2 text-sm cursor-pointer ${isActive ? "text-amber-600 focus:text-amber-700 focus:bg-amber-50" : "text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50"}`}
+                                  onClick={() => toggleStatus(u)}
+                                >
+                                  {isActive ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                  {isActive ? "Deactivate" : "Activate"}
+                                </DropdownMenuItem>
+                                {isSuperAdmin(currentUser?.role) && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="gap-2 text-sm cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
+                                      onClick={() => setDeleteId(u.id)}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" /> Delete User
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -354,7 +371,7 @@ export default function UsersPage() {
             <DialogTitle>Create User</DialogTitle>
             <DialogDescription>Add a new staff member or admin account.</DialogDescription>
           </DialogHeader>
-          <CreateUserForm onClose={() => setShowCreate(false)} actorRole={currentUser?.role as AppRole} />
+          <CreateUserForm onClose={() => setShowCreate(false)} actorRole={currentUser?.role as AppRole} actorId={currentUser?.id} />
         </DialogContent>
       </Dialog>
 
@@ -367,7 +384,7 @@ export default function UsersPage() {
           {resetPwUser && resetPwUser.role === "administrator" && !isSuperAdmin(currentUser?.role) ? (
             <AccessDeniedNote />
           ) : resetPwUser ? (
-            <ResetPasswordForm userId={resetPwUser.id} userName={resetPwUser.name} actorRole={currentUser?.role as AppRole} onClose={() => setResetPwUser(null)} />
+            <ResetPasswordForm userId={resetPwUser.id} userName={resetPwUser.name} actorRole={currentUser?.role as AppRole} actorId={currentUser?.id} onClose={() => setResetPwUser(null)} />
           ) : null}
         </DialogContent>
       </Dialog>

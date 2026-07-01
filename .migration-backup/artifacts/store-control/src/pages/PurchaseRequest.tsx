@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ShoppingCart, Printer, Download, Search, Plus, Trash2, TrendingDown, X } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { escapeHtml, sanitizeXlsxCell } from "@/lib/utils";
 
 interface RequestItem {
   productId: string;
@@ -160,7 +161,7 @@ export default function PurchaseRequestPage() {
       meta.supplierName ? [`Supplier: ${meta.supplierName}`] : [],
       [],
       ["#", "Product Name", "Code", "Category", "Current Stock", "Reorder Level", "Request Qty", "Unit", "Notes"],
-      ...rows.map((r, i) => [i + 1, r.productName, r.productCode, r.category ?? "", r.currentStock, r.reorderLevel, r.requestQty, r.baseUnit, r.notes]),
+      ...rows.map((r, i) => [i + 1, sanitizeXlsxCell(r.productName), sanitizeXlsxCell(r.productCode), sanitizeXlsxCell(r.category), r.currentStock, r.reorderLevel, r.requestQty, sanitizeXlsxCell(r.baseUnit), sanitizeXlsxCell(r.notes)]),
       [],
       meta.notes ? [`General Notes: ${meta.notes}`] : [],
     ].filter(r => r.length > 0);
@@ -181,12 +182,12 @@ export default function PurchaseRequestPage() {
       const stockColor = r.currentStock <= 0 ? "#dc2626" : r.currentStock < r.reorderLevel ? "#ea580c" : "#16a34a";
       return `<tr>
         <td>${i + 1}</td>
-        <td><strong>${r.productName}</strong><br><small style="color:#888">${r.productCode}${r.category ? ` · ${r.category}` : ""}</small></td>
+        <td><strong>${escapeHtml(r.productName)}</strong><br><small style="color:#888">${escapeHtml(r.productCode)}${r.category ? ` · ${escapeHtml(r.category)}` : ""}</small></td>
         <td style="text-align:right;color:${stockColor};font-weight:600">${r.currentStock}</td>
         <td style="text-align:right">${r.reorderLevel}</td>
         <td style="text-align:center;font-size:17px;font-weight:700">${r.requestQty}</td>
-        <td>${r.baseUnit}</td>
-        <td>${r.notes}</td>
+        <td>${escapeHtml(r.baseUnit)}</td>
+        <td>${escapeHtml(r.notes)}</td>
       </tr>`;
     }).join("");
 
@@ -212,11 +213,11 @@ tr:nth-child(even) td{background:#f9fafb}
 <div class="header-block">
   <div>
     <div class="clinic">AUC Clinic Inventory System</div>
-    <div class="title">${meta.title}</div>
-    <div class="meta">Request No: <strong>${meta.requestNumber}</strong></div>
+    <div class="title">${escapeHtml(meta.title)}</div>
+    <div class="meta">Request No: <strong>${escapeHtml(meta.requestNumber)}</strong></div>
     <div class="meta">Date: <strong>${dateStr}</strong></div>
-    <div class="meta">Prepared by: <strong>${user?.fullName ?? user?.username ?? ""}</strong></div>
-    ${meta.supplierName ? `<div class="meta">Supplier: <strong>${meta.supplierName}</strong></div>` : ""}
+    <div class="meta">Prepared by: <strong>${escapeHtml(user?.fullName ?? user?.username)}</strong></div>
+    ${meta.supplierName ? `<div class="meta">Supplier: <strong>${escapeHtml(meta.supplierName)}</strong></div>` : ""}
   </div>
 </div>
 <table>
@@ -231,9 +232,9 @@ tr:nth-child(even) td{background:#f9fafb}
 </tr></thead>
 <tbody>${rows_html}</tbody>
 </table>
-${meta.notes ? `<div class="notes-box"><strong>Notes:</strong> ${meta.notes}</div>` : ""}
+${meta.notes ? `<div class="notes-box"><strong>Notes:</strong> ${escapeHtml(meta.notes)}</div>` : ""}
 <div class="sig-row">
-  <div class="sig-box"><div class="meta">Prepared by</div><div class="sig-line">${user?.fullName ?? user?.username ?? ""}</div></div>
+  <div class="sig-box"><div class="meta">Prepared by</div><div class="sig-line">${escapeHtml(user?.fullName ?? user?.username)}</div></div>
   <div class="sig-box"><div class="meta">Approved by</div><div class="sig-line">&nbsp;</div></div>
   <div class="sig-box"><div class="meta">Received / Confirmed by</div><div class="sig-line">&nbsp;</div></div>
 </div>
