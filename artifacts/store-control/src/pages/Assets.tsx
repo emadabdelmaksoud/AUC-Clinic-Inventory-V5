@@ -1057,9 +1057,9 @@ export default function AssetsPage() {
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="text-left px-4 py-3 font-medium">Asset Name</th>
-                <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Type / Category</th>
-                <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Ref. Nos.</th>
-                <th className="text-left px-4 py-3 font-medium hidden xl:table-cell">Custodian</th>
+                <th className="text-left px-4 py-3 font-medium">Type / Category</th>
+                <th className="text-left px-4 py-3 font-medium">Ref. Nos.</th>
+                <th className="text-left px-4 py-3 font-medium">Custodian</th>
                 <th className="text-left px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
@@ -1074,17 +1074,17 @@ export default function AssetsPage() {
                       <p className="font-medium">{asset.assetName}</p>
                       {asset.serialNumber && <p className="text-xs text-muted-foreground">S/N: {asset.serialNumber}</p>}
                     </td>
-                    <td className="px-4 py-3 hidden md:table-cell">
+                    <td className="px-4 py-3">
                       <p>{typeName}</p>
                       {catName && <p className="text-xs text-muted-foreground">{catName}</p>}
                     </td>
-                    <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground text-xs space-y-0.5">
+                    <td className="px-4 py-3 text-muted-foreground text-xs space-y-0.5">
                       {asset.fyNumber && <p>FY: {asset.fyNumber}</p>}
                       {asset.faNumber && <p>FA: {asset.faNumber}</p>}
                       {asset.ccNumber && <p>CC: {asset.ccNumber}</p>}
                       {!asset.fyNumber && !asset.faNumber && !asset.ccNumber && <span>—</span>}
                     </td>
-                    <td className="px-4 py-3 hidden xl:table-cell text-sm">
+                    <td className="px-4 py-3 text-sm">
                       {asset.custodianUserId && asset.custodianType === "system_user" ? (
                         <Link href={`/users/${asset.custodianUserId}`} className="font-medium hover:underline text-primary">
                           {asset.custodianName || "View User"}
