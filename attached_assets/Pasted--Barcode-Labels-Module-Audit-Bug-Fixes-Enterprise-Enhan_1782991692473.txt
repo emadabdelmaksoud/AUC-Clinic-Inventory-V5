@@ -1,0 +1,462 @@
+# Barcode & Labels Module – Audit, Bug Fixes & Enterprise Enhancements
+
+The Barcode & Labels module is functional but still lacks several enterprise features required for a professional hospital inventory management system.
+
+## IMPORTANT REQUIREMENTS
+
+* Do NOT rewrite the existing architecture.
+* Do NOT change the database schema unless absolutely necessary.
+* Preserve all existing functionality.
+* Follow the current project coding style.
+* Keep backward compatibility.
+* If database changes are required, provide SQL migration scripts instead of modifying existing tables directly.
+* Ensure all new features work in both the current Supabase deployment and the Local Database mode.
+
+---
+
+# Priority 1 – Fix Existing Bugs
+
+## 1. Camera Scanner is not working
+
+This is the highest priority.
+
+The "Tap to open camera" button does not successfully open and scan barcodes/QR codes.
+
+Investigate and fix:
+
+* Camera permissions
+* Browser compatibility
+* HTTPS/PWA requirements
+* Mobile support
+* Desktop support
+* Error handling when permission is denied
+* Proper cleanup when camera closes
+* Switching between front/back cameras on mobile
+* Selecting different cameras when multiple devices exist
+
+Requirements:
+
+* Camera should automatically detect:
+
+  * Code128
+  * Code39
+  * EAN-13
+  * EAN-8
+  * UPC
+  * QR Codes
+
+* Scanner should stop automatically after a successful scan.
+
+* Add a loading indicator while initializing the camera.
+
+* Display friendly error messages if:
+
+  * Camera unavailable
+  * Permission denied
+  * No camera found
+  * Browser unsupported
+
+---
+
+## 2. USB Barcode Scanner
+
+Ensure USB scanners work automatically.
+
+When the scanner page is open:
+
+* Cursor automatically focuses on scan input.
+* Scanner input is detected automatically.
+* Enter key triggers search.
+* No mouse interaction required.
+
+---
+
+# Priority 2 – Barcode Generation
+
+Improve the generation workflow.
+
+### Add automatic barcode generation
+
+Products
+
+Assets
+
+Administrator should be able to configure:
+
+* Automatic barcode generation ON/OFF
+* Prefix
+
+Examples:
+
+PRD-000001
+
+AST-000001
+
+Or custom prefixes.
+
+---
+
+### Prevent duplicates
+
+Before generating:
+
+Check if barcode already exists.
+
+Never generate duplicate barcodes.
+
+---
+
+### Regenerate confirmation
+
+If barcode already exists:
+
+Show confirmation dialog.
+
+Display:
+
+Current barcode
+
+New barcode
+
+Reason
+
+---
+
+# Priority 3 – Bulk Operations
+
+Support:
+
+Select multiple products
+
+Select multiple assets
+
+Select all
+
+Generate Selected
+
+Print Selected
+
+Download Selected as PDF
+
+Clear Selection
+
+---
+
+# Priority 4 – Printing
+
+Improve printing.
+
+Support:
+
+Single label
+
+Multiple labels
+
+Custom quantity
+
+Preview before printing
+
+Download PDF
+
+Download PNG
+
+Download SVG
+
+Remember last used template.
+
+---
+
+# Priority 5 – Label Templates
+
+Create administrator-managed templates.
+
+Examples:
+
+Small Product Label
+
+Shelf Label
+
+Asset QR Label
+
+Thermal Label
+
+Hospital Asset Sticker
+
+Each template should define:
+
+Dimensions
+
+Barcode position
+
+QR position
+
+Logo
+
+Font
+
+Margins
+
+Orientation
+
+---
+
+# Priority 6 – Live Preview
+
+Before printing:
+
+Show real-time preview.
+
+Changing:
+
+Barcode type
+
+Template
+
+Size
+
+Logo
+
+Text
+
+should immediately update the preview.
+
+---
+
+# Priority 7 – Scanner Improvements
+
+After scanning:
+
+Automatically identify:
+
+Product
+
+Asset
+
+Unknown barcode
+
+Display:
+
+Name
+
+Barcode
+
+Warehouse
+
+Current stock
+
+Asset status
+
+Custodian
+
+Location
+
+Quick actions:
+
+Open record
+
+Issue
+
+Receive
+
+Transfer
+
+Inventory adjustment
+
+---
+
+# Priority 8 – Scan Modes
+
+Support:
+
+Single Scan
+
+Continuous Scan
+
+Inventory Counting Mode
+
+History Mode
+
+Maintain scan history with timestamps.
+
+---
+
+# Priority 9 – Barcode Status
+
+Replace "No barcode assigned" with visual badges.
+
+Examples:
+
+Missing Barcode
+
+Generated
+
+Printed
+
+Updated
+
+---
+
+# Priority 10 – Better Information
+
+Products should display:
+
+Product Name
+
+Barcode
+
+Current Stock
+
+Warehouse
+
+Category
+
+Unit
+
+Assets should display:
+
+Asset Name
+
+Asset Type
+
+Category
+
+FA Number
+
+Serial Number
+
+Current Custodian
+
+Department
+
+Status
+
+---
+
+# Priority 11 – Barcode Settings
+
+Administrator-only settings page.
+
+Configure:
+
+Default barcode type
+
+Default label template
+
+Default label size
+
+Automatic barcode generation
+
+Barcode prefixes
+
+Company logo
+
+Paper size
+
+Thermal printer settings
+
+Margins
+
+---
+
+# Priority 12 – Missing Barcode Report
+
+Create report:
+
+Products without barcodes
+
+Assets without barcodes
+
+Allow:
+
+Generate All
+
+Print All
+
+Export
+
+---
+
+# Priority 13 – Print History
+
+Log every print event.
+
+Store:
+
+Date
+
+User
+
+Record
+
+Barcode
+
+Template
+
+Copies
+
+Reprinted
+
+Reason
+
+Integrate with Audit Log.
+
+---
+
+# Priority 14 – Import Existing Barcodes
+
+Allow importing barcode mappings from:
+
+Excel
+
+CSV
+
+Without regenerating existing barcodes.
+
+---
+
+# Priority 15 – Performance
+
+Optimize rendering.
+
+Avoid rendering all rows simultaneously.
+
+Use virtualization if needed.
+
+Minimize unnecessary API calls.
+
+Cache templates.
+
+---
+
+# Priority 16 – Mobile & PWA
+
+Ensure the module works perfectly on:
+
+Desktop
+
+Tablet
+
+Mobile
+
+PWA
+
+Camera scanner should work correctly inside the installed PWA.
+
+---
+
+# Testing Requirements
+
+Before completing:
+
+* Verify barcode generation.
+* Verify QR generation.
+* Verify printing.
+* Verify bulk printing.
+* Verify USB scanner.
+* Verify mobile camera scanner.
+* Verify desktop camera scanner.
+* Verify PWA camera access.
+* Verify all existing functionality remains intact.
+* Ensure no regressions are introduced.
+
+Provide a summary of every change made and explain any new dependencies or configuration required.

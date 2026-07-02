@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import JsBarcode from "jsbarcode";
 import QRCodeLib from "qrcode";
-import { listProducts, findProductByBarcode } from "@/lib/products";
+import { listProducts } from "@/lib/products";
 import { listAssets } from "@/lib/assets";
 import { listProductUnits } from "@/lib/product-units";
 import { useAuth } from "@/lib/auth";
@@ -26,10 +26,20 @@ import {
   QrCode, Search, Printer, Settings, ScanLine, Package,
   Briefcase, Plus, Minus, RefreshCw,
   AlertCircle, Save, ChevronRight, Keyboard, Camera, CameraOff,
-  Zap, ZapOff, SwitchCamera, CheckCircle2,
+  Zap, ZapOff, SwitchCamera, CheckCircle2, Clock, Trash2,
+  ExternalLink, RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Asset } from "@/lib/db";
+
+// Scan history entry
+interface ScanRecord {
+  id: number;
+  code: string;
+  time: Date;
+  resultType: "product" | "asset" | "not_found";
+  name?: string;
+}
 
 // ── Barcode renderers ──────────────────────────────────────────────────────────
 
@@ -290,11 +300,19 @@ function ProductsTab({ settings }: { settings: BarcodeSettings }) {
               <div className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30">
                 <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleProduct(p.id)} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{p.productName}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-sm font-medium truncate">{p.productName}</p>
+                    {p.category && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{p.category}</span>}
+                  </div>
                   {p.barcode ? (
-                    <p className="text-xs font-mono text-muted-foreground">{p.barcode}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-xs font-mono text-muted-foreground">{p.barcode}</span>
+                      <Badge className="text-[9px] px-1 py-0 h-4 bg-green-100 text-green-700 hover:bg-green-100">Generated</Badge>
+                    </div>
                   ) : (
-                    <p className="text-xs text-amber-600">No barcode assigned</p>
+                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 mt-0.5 border-amber-400 text-amber-600">
+                      Missing Barcode
+                    </Badge>
                   )}
                 </div>
                 <button
@@ -459,21 +477,28 @@ function AssetsTab({ settings }: { settings: BarcodeSettings }) {
               <div key={a.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30">
                 <Checkbox checked={selected.has(a.id)} onCheckedChange={() => toggleAsset(a.id)} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{a.assetName}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-sm font-medium truncate">{a.assetName}</p>
+                    <Badge variant={a.status === "active" ? "default" : "secondary"} className="text-[9px] px-1.5 py-0 h-4 shrink-0">
+                      {a.status}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {a.faNumber && <span className="text-[10px] text-muted-foreground">FA: {a.faNumber}</span>}
                     {a.serialNumber && <span className="text-[10px] text-muted-foreground">S/N: {a.serialNumber}</span>}
-                    {hasDedicatedBarcode && (
-                      <span className="text-[10px] font-mono text-green-700">{(a as any).barcode}</span>
-                    )}
-                    {!hasDedicatedBarcode && (
-                      <span className="text-[10px] text-amber-600">Using: {bv.slice(0, 20)}</span>
-                    )}
+                    {a.custodianName && <span className="text-[10px] text-muted-foreground">👤 {a.custodianName}</span>}
                   </div>
+                  {hasDedicatedBarcode ? (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[10px] font-mono text-muted-foreground">{(a as any).barcode}</span>
+                      <Badge className="text-[9px] px-1 py-0 h-4 bg-green-100 text-green-700 hover:bg-green-100">Generated</Badge>
+                    </div>
+                  ) : (
+                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 mt-0.5 border-amber-400 text-amber-600">
+                      Missing Barcode
+                    </Badge>
+                  )}
                 </div>
-                <Badge variant={a.status === "active" ? "default" : "secondary"} className="text-[10px] px-1.5 py-0 shrink-0">
-                  {a.status}
-                </Badge>
                 {!hasDedicatedBarcode && (
                   <Button
                     size="sm"
@@ -506,126 +531,158 @@ function AssetsTab({ settings }: { settings: BarcodeSettings }) {
 }
 
 // ── Camera scanner component ───────────────────────────────────────────────────
+// KEY FIX: html5-qrcode needs its container div to be VISIBLE in the DOM
+// (with real dimensions) before scanner.start() is called.
+// We trigger initialization via a useEffect that fires AFTER React commits
+// the DOM update that makes the container visible — using state "loading" as
+// the trigger so the div is rendered before the scanner mounts into it.
 
-type CameraState = "idle" | "requesting" | "active" | "denied" | "unavailable";
-
+type CameraState = "idle" | "loading" | "active" | "denied" | "unavailable";
 interface CameraInfo { id: string; label: string; }
+
+const CAMERA_CONTAINER_ID = "hl5qr-viewfinder";
 
 function CameraScanner({ onDetected }: { onDetected: (code: string) => void }) {
   const [state, setState] = useState<CameraState>("idle");
   const [cameras, setCameras] = useState<CameraInfo[]>([]);
-  const [selectedCamera, setSelectedCamera] = useState<string>("environment");
+  const [activeCameraId, setActiveCameraId] = useState("environment");
   const [torchOn, setTorchOn] = useState(false);
-  const [lastDetected, setLastDetected] = useState("");
-  const scannerRef = useRef<any>(null);
-  const containerIdRef = useRef(`qr-reader-${Math.random().toString(36).slice(2)}`);
+  const [flashCode, setFlashCode] = useState("");
 
-  const stopCamera = useCallback(async () => {
+  const scannerRef = useRef<any>(null);
+  // Use refs to avoid stale closures in the scan callback
+  const lastCodeRef = useRef("");
+  const pendingCamRef = useRef("environment");
+  const onDetectedRef = useRef(onDetected);
+  useEffect(() => { onDetectedRef.current = onDetected; }, [onDetected]);
+
+  const doStop = useCallback(async () => {
     if (scannerRef.current) {
       try {
         if (scannerRef.current.isScanning) await scannerRef.current.stop();
         scannerRef.current.clear();
-      } catch { /* ignore */ }
+      } catch { /* ignore cleanup errors */ }
       scannerRef.current = null;
     }
-    setState("idle");
+    lastCodeRef.current = "";
+    setFlashCode("");
     setTorchOn(false);
   }, []);
 
-  const startCamera = useCallback(async (cameraId?: string) => {
-    setState("requesting");
-    try {
-      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+  // ⚑ MAIN FIX: useEffect fires after React commits — the container div is
+  // in the DOM and visible when this runs, so html5-qrcode can mount correctly.
+  useEffect(() => {
+    if (state !== "loading") return;
+    let cancelled = false;
 
-      // Enumerate cameras on first use
-      if (cameras.length === 0) {
-        try {
-          const devices = await Html5Qrcode.getCameras();
-          if (devices.length > 0) {
-            setCameras(devices.map(d => ({ id: d.id, label: d.label || `Camera ${d.id.slice(0, 6)}` })));
-          }
-        } catch { /* proceed without list */ }
-      }
+    (async () => {
+      try {
+        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+        if (cancelled) return;
 
-      if (scannerRef.current) {
-        try { await scannerRef.current.stop(); scannerRef.current.clear(); } catch { /* ignore */ }
-      }
+        // Enumerate available cameras (once per session)
+        if (cameras.length === 0) {
+          try {
+            const devs = await Html5Qrcode.getCameras();
+            if (!cancelled && devs.length > 0)
+              setCameras(devs.map(d => ({ id: d.id, label: d.label || `Camera ${d.id.slice(0, 6)}` })));
+          } catch { /* camera list is optional */ }
+        }
 
-      const scanner = new Html5Qrcode(containerIdRef.current, {
-        verbose: false,
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.UPC_A,
-        ],
-      });
-      scannerRef.current = scanner;
+        // Tear down any previous instance
+        await doStop();
+        if (cancelled) return;
 
-      const cameraConstraint = cameraId && cameraId !== "environment" && cameraId !== "user"
-        ? { deviceId: { exact: cameraId } }
-        : { facingMode: cameraId ?? "environment" };
+        const scanner = new Html5Qrcode(CAMERA_CONTAINER_ID, {
+          verbose: false,
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+          ],
+        });
+        scannerRef.current = scanner;
 
-      await scanner.start(
-        cameraConstraint,
-        {
-          fps: 15,
-          qrbox: (w: number, h: number) => {
-            const min = Math.min(w, h);
-            const size = Math.round(min * 0.7);
-            return { width: size, height: Math.round(size * 0.6) };
+        const camId = pendingCamRef.current;
+        const constraint = camId === "environment" || camId === "user"
+          ? { facingMode: camId }
+          : { deviceId: { exact: camId } };
+
+        await scanner.start(
+          constraint,
+          {
+            fps: 15,
+            qrbox: (w: number, h: number) => {
+              const size = Math.round(Math.min(w, h) * 0.72);
+              return { width: size, height: Math.round(size * 0.55) };
+            },
+            disableFlip: false,
           },
-          disableFlip: false,
-        },
-        (decodedText: string) => {
-          if (decodedText === lastDetected) return;
-          setLastDetected(decodedText);
-          onDetected(decodedText);
-          setTimeout(() => setLastDetected(""), 2000);
-        },
-        () => { /* per-frame not-found: ignore */ }
-      );
+          (code: string) => {
+            // Ref-based dedupe — no stale closure risk
+            if (code === lastCodeRef.current) return;
+            lastCodeRef.current = code;
+            setFlashCode(code);
+            onDetectedRef.current(code);
+            setTimeout(() => { lastCodeRef.current = ""; setFlashCode(""); }, 2500);
+          },
+          () => { /* per-frame failure: ignore */ }
+        );
 
-      setState("active");
-    } catch (err: any) {
-      scannerRef.current = null;
-      const msg = String(err?.message ?? err ?? "");
-      if (msg.toLowerCase().includes("permission") || msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("notallowed")) {
-        setState("denied");
-      } else if (msg.toLowerCase().includes("notfound") || msg.toLowerCase().includes("no camera")) {
-        setState("unavailable");
-      } else {
-        setState("unavailable");
-        console.warn("Camera scanner error:", err);
+        if (!cancelled) setState("active");
+      } catch (err: any) {
+        if (cancelled) return;
+        scannerRef.current = null;
+        const msg = String(err?.message ?? "").toLowerCase();
+        if (msg.includes("permission") || msg.includes("denied") || msg.includes("notallowed"))
+          setState("denied");
+        else
+          setState("unavailable");
+        console.warn("[CameraScanner]", err);
       }
-    }
-  }, [cameras.length, lastDetected, onDetected]);
+    })();
 
-  const toggleTorch = useCallback(async () => {
+    return () => { cancelled = true; };
+  }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup on unmount
+  useEffect(() => () => { doStop(); setState("idle"); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openCamera = (camId = "environment") => {
+    pendingCamRef.current = camId;
+    setActiveCameraId(camId);
+    setState("loading"); // triggers the useEffect above
+  };
+
+  const stopCamera = async () => { await doStop(); setState("idle"); };
+
+  const switchCamera = async () => {
+    if (cameras.length < 2) return;
+    const idx = cameras.findIndex(c => c.id === activeCameraId);
+    const next = cameras[(idx + 1) % cameras.length];
+    openCamera(next.id);
+  };
+
+  const toggleTorch = async () => {
     if (!scannerRef.current?.isScanning) return;
     try {
       await scannerRef.current.applyVideoConstraints({ advanced: [{ torch: !torchOn }] });
       setTorchOn(t => !t);
     } catch { toast.error("Flash not supported on this device"); }
-  }, [torchOn]);
+  };
 
-  const switchCamera = useCallback(async () => {
-    if (cameras.length < 2) return;
-    const currentIdx = cameras.findIndex(c => c.id === selectedCamera);
-    const nextCamera = cameras[(currentIdx + 1) % cameras.length];
-    setSelectedCamera(nextCamera.id);
-    await startCamera(nextCamera.id);
-  }, [cameras, selectedCamera, startCamera]);
-
-  // Cleanup on unmount
-  useEffect(() => () => { stopCamera(); }, [stopCamera]);
+  const isViewfinderVisible = state === "loading" || state === "active";
 
   return (
     <div className="space-y-3">
+      {/* Idle */}
       {state === "idle" && (
         <button
-          onClick={() => startCamera(selectedCamera)}
+          onClick={() => openCamera("environment")}
           className="w-full flex flex-col items-center justify-center gap-3 h-52 rounded-xl border-2 border-dashed border-muted-foreground/30 hover:border-primary/50 hover:bg-muted/30 transition-colors cursor-pointer"
         >
           <div className="p-4 rounded-full bg-primary/10">
@@ -633,84 +690,93 @@ function CameraScanner({ onDetected }: { onDetected: (code: string) => void }) {
           </div>
           <div className="text-center">
             <p className="font-medium text-sm">Tap to open camera</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Point at any barcode or QR code</p>
+            <p className="text-xs text-muted-foreground mt-0.5">QR Code · Code 128 · Code 39 · EAN · UPC</p>
           </div>
         </button>
       )}
 
-      {state === "requesting" && (
-        <div className="flex flex-col items-center justify-center h-52 gap-3 rounded-xl bg-muted/30 border">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-muted-foreground">Requesting camera access…</p>
+      {/* Initializing */}
+      {state === "loading" && (
+        <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          Initializing camera…
         </div>
       )}
 
+      {/* Permission denied */}
       {state === "denied" && (
-        <div className="flex flex-col items-center justify-center h-52 gap-3 rounded-xl bg-destructive/5 border border-destructive/20">
+        <div className="flex flex-col items-center justify-center h-44 gap-3 rounded-xl bg-destructive/5 border border-destructive/20 px-4">
           <CameraOff className="w-8 h-8 text-destructive/60" />
-          <div className="text-center px-4">
+          <div className="text-center">
             <p className="font-medium text-sm text-destructive">Camera permission denied</p>
-            <p className="text-xs text-muted-foreground mt-1">Allow camera access in your browser settings, then try again.</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Open your browser settings → allow camera for this site, then tap Try Again.
+            </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setState("idle")}>Try Again</Button>
+          <Button variant="outline" size="sm" onClick={() => openCamera("environment")}>
+            <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Try Again
+          </Button>
         </div>
       )}
 
+      {/* No camera / error */}
       {state === "unavailable" && (
-        <div className="flex flex-col items-center justify-center h-52 gap-3 rounded-xl bg-muted/30 border">
+        <div className="flex flex-col items-center justify-center h-44 gap-3 rounded-xl bg-muted/30 border px-4">
           <CameraOff className="w-8 h-8 text-muted-foreground" />
-          <div className="text-center px-4">
-            <p className="font-medium text-sm">No camera found</p>
-            <p className="text-xs text-muted-foreground mt-1">Use a keyboard scanner or type the barcode manually below.</p>
+          <div className="text-center">
+            <p className="font-medium text-sm">Camera not available</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              No camera detected or browser blocked access. Try again, or use the keyboard scanner below.
+            </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setState("idle")}>Try Again</Button>
+          <Button variant="outline" size="sm" onClick={() => openCamera("environment")}>
+            <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Try Again
+          </Button>
         </div>
       )}
 
-      {/* Live viewfinder — always rendered so html5-qrcode has its mount target */}
+      {/* Viewfinder — stays mounted whenever camera is loading or active.
+          IMPORTANT: must NOT use display:none while camera is initializing —
+          html5-qrcode needs the element to exist with real dimensions. */}
       <div
-        className={state === "active" ? "relative rounded-xl overflow-hidden border" : "hidden"}
+        style={isViewfinderVisible
+          ? undefined
+          : { position: "fixed", top: -9999, left: -9999, width: 1, height: 1, overflow: "hidden" }
+        }
       >
-        <div id={containerIdRef.current} className="w-full" />
-        {/* Controls overlay */}
-        <div className="absolute bottom-0 inset-x-0 flex items-center justify-between px-3 py-2 bg-gradient-to-t from-black/60 to-transparent">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-white hover:text-white hover:bg-white/20 h-8 px-2"
-            onClick={toggleTorch}
-          >
-            {torchOn ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-            <span className="text-xs ml-1">{torchOn ? "Flash Off" : "Flash"}</span>
-          </Button>
-          {cameras.length > 1 && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-white hover:text-white hover:bg-white/20 h-8 px-2"
-              onClick={switchCamera}
-            >
-              <SwitchCamera className="w-4 h-4" />
-              <span className="text-xs ml-1">Flip</span>
-            </Button>
+        <div className={state === "active" ? "relative rounded-xl overflow-hidden border" : "rounded-xl overflow-hidden"}>
+          {/* html5-qrcode mounts its video + canvas into this div */}
+          <div id={CAMERA_CONTAINER_ID} className="w-full" style={{ minHeight: isViewfinderVisible ? 240 : 1 }} />
+
+          {state === "active" && (
+            <>
+              {/* Controls bar */}
+              <div className="absolute bottom-0 inset-x-0 flex items-center justify-between px-3 py-2 bg-gradient-to-t from-black/60 to-transparent">
+                <Button size="sm" variant="ghost" className="text-white hover:bg-white/20 h-8 px-2" onClick={toggleTorch}>
+                  {torchOn ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                  <span className="text-xs ml-1">{torchOn ? "Flash Off" : "Flash"}</span>
+                </Button>
+                {cameras.length > 1 && (
+                  <Button size="sm" variant="ghost" className="text-white hover:bg-white/20 h-8 px-2" onClick={switchCamera}>
+                    <SwitchCamera className="w-4 h-4" />
+                    <span className="text-xs ml-1">Flip</span>
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" className="text-white hover:bg-white/20 h-8 px-2" onClick={stopCamera}>
+                  <CameraOff className="w-4 h-4" />
+                  <span className="text-xs ml-1">Stop</span>
+                </Button>
+              </div>
+              {/* Scan success flash */}
+              {flashCode && (
+                <div className="absolute top-2 inset-x-2 flex items-center gap-2 bg-green-600/90 text-white rounded-lg px-3 py-2 text-sm font-medium">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span className="font-mono truncate">{flashCode}</span>
+                </div>
+              )}
+            </>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-white hover:text-white hover:bg-white/20 h-8 px-2"
-            onClick={stopCamera}
-          >
-            <CameraOff className="w-4 h-4" />
-            <span className="text-xs ml-1">Stop</span>
-          </Button>
         </div>
-        {/* Detected flash */}
-        {lastDetected && (
-          <div className="absolute top-2 inset-x-2 flex items-center gap-2 bg-green-600/90 text-white rounded-lg px-3 py-2 text-sm font-medium animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span className="font-mono truncate">{lastDetected}</span>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -720,11 +786,13 @@ function CameraScanner({ onDetected }: { onDetected: (code: string) => void }) {
 
 function ScannerTab() {
   const [scanInput, setScanInput] = useState("");
-  const [lastScan, setLastScan] = useState("");
-  const [result, setResult] = useState<{ type: "product" | "asset" | "not_found"; data?: any } | null>(null);
+  const [result, setResult] = useState<{ type: "product" | "asset" | "not_found"; data?: any; code: string } | null>(null);
+  const [history, setHistory] = useState<ScanRecord[]>([]);
+  const [continuousMode, setContinuousMode] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastKeyTime = useRef<number>(0);
   const bufferRef = useRef<string>("");
+  const scanIdRef = useRef(0);
 
   const { data: products = [] } = useQuery({ queryKey: ["products", ""], queryFn: () => listProducts("") });
   const { data: assets = [] } = useQuery({ queryKey: ["assets"], queryFn: () => listAssets() });
@@ -732,11 +800,15 @@ function ScannerTab() {
   const processBarcode = useCallback((code: string) => {
     const trimmed = code.trim();
     if (!trimmed) return;
-    setLastScan(trimmed);
     setScanInput("");
 
     const product = products.find(p => p.barcode === trimmed);
-    if (product) { setResult({ type: "product", data: product }); return; }
+    if (product) {
+      const rec: ScanRecord = { id: ++scanIdRef.current, code: trimmed, time: new Date(), resultType: "product", name: product.productName };
+      setResult({ type: "product", data: product, code: trimmed });
+      setHistory(h => [rec, ...h].slice(0, 20));
+      return;
+    }
 
     const asset = assets.find(a =>
       (a as any).barcode === trimmed ||
@@ -744,21 +816,36 @@ function ScannerTab() {
       a.serialNumber === trimmed ||
       a.ccNumber === trimmed
     );
-    if (asset) { setResult({ type: "asset", data: asset }); return; }
+    if (asset) {
+      const rec: ScanRecord = { id: ++scanIdRef.current, code: trimmed, time: new Date(), resultType: "asset", name: asset.assetName };
+      setResult({ type: "asset", data: asset, code: trimmed });
+      setHistory(h => [rec, ...h].slice(0, 20));
+      return;
+    }
 
-    setResult({ type: "not_found" });
+    const rec: ScanRecord = { id: ++scanIdRef.current, code: trimmed, time: new Date(), resultType: "not_found" };
+    setResult({ type: "not_found", code: trimmed });
+    setHistory(h => [rec, ...h].slice(0, 20));
   }, [products, assets]);
 
-  // Keyboard scanner: rapid keystrokes (< 50 ms apart) buffered, submit on Enter
+  // Global keyboard scanner: fast successive keystrokes (<50 ms) + Enter
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Skip if user is typing in an input/textarea/select
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === "textarea") return;
+      if (tag === "input" && (e.target as HTMLInputElement) !== inputRef.current) return;
+
       const now = Date.now();
       const gap = now - lastKeyTime.current;
       lastKeyTime.current = now;
+
       if (e.key === "Enter") {
         const buf = bufferRef.current;
         bufferRef.current = "";
-        if (buf.length > 2) processBarcode(buf);
+        if (buf.length > 2) { processBarcode(buf); return; }
+        // Also handle the manual input field
+        if (scanInput.trim()) processBarcode(scanInput);
         return;
       }
       if (e.key.length === 1) {
@@ -767,12 +854,27 @@ function ScannerTab() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [processBarcode]);
+  }, [processBarcode, scanInput]);
 
+  // Auto-focus the manual input on mount
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
+
+  const resultTypeColor = result?.type === "product" ? "bg-blue-50"
+    : result?.type === "asset" ? "bg-green-50" : "bg-amber-50";
 
   return (
     <div className="space-y-5 max-w-xl">
+      {/* Scan mode toggle */}
+      <div className="flex items-center justify-between bg-muted/40 rounded-lg px-3 py-2">
+        <div>
+          <p className="text-sm font-medium">{continuousMode ? "Continuous Scan" : "Single Scan"}</p>
+          <p className="text-xs text-muted-foreground">
+            {continuousMode ? "Camera keeps scanning after each detection" : "Camera stops after first scan"}
+          </p>
+        </div>
+        <Switch checked={continuousMode} onCheckedChange={setContinuousMode} />
+      </div>
+
       {/* Camera scanner */}
       <Card>
         <CardHeader className="pb-3">
@@ -789,13 +891,12 @@ function ScannerTab() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
-            <Keyboard className="w-4 h-4" /> Keyboard Scanner / Manual Entry
+            <Keyboard className="w-4 h-4" /> Keyboard Scanner / Manual
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            USB/Bluetooth scanners are auto-detected — just scan while this page is open.
-            You can also type a barcode manually.
+            USB/Bluetooth scanners auto-detect — just scan while this tab is open. No mouse click needed.
           </p>
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -806,77 +907,140 @@ function ScannerTab() {
                 placeholder="Scan or type barcode…"
                 value={scanInput}
                 onChange={e => setScanInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && processBarcode(scanInput)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); processBarcode(scanInput); } }}
                 data-testid="scanner-input"
+                autoComplete="off"
               />
             </div>
-            <Button onClick={() => processBarcode(scanInput)} disabled={!scanInput.trim()}>Search</Button>
+            <Button onClick={() => processBarcode(scanInput)} disabled={!scanInput.trim()}>
+              Search
+            </Button>
           </div>
-          {lastScan && (
-            <p className="text-xs text-muted-foreground">
-              Last scan: <span className="font-mono font-medium text-foreground">{lastScan}</span>
-            </p>
-          )}
         </CardContent>
       </Card>
 
-      {/* Result */}
+      {/* Latest result */}
       {result && (
-        <Card>
+        <Card className="border-l-4" style={{ borderLeftColor: result.type === "product" ? "#3b82f6" : result.type === "asset" ? "#22c55e" : "#f59e0b" }}>
           <CardContent className="pt-4">
             {result.type === "not_found" && (
-              <div className="flex items-center gap-2 text-amber-700">
-                <AlertCircle className="w-5 h-5" />
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-amber-50 rounded shrink-0">
+                  <AlertCircle className="w-5 h-5 text-amber-600" />
+                </div>
                 <div>
                   <p className="font-medium text-sm">Barcode Not Found</p>
-                  <p className="text-xs text-muted-foreground">No product or asset matched "{lastScan}"</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    No product or asset matched <span className="font-mono">{result.code}</span>
+                  </p>
                 </div>
               </div>
             )}
+
             {result.type === "product" && result.data && (
               <div className="space-y-3">
                 <div className="flex items-start gap-3">
-                  <div className="p-2 bg-blue-50 rounded">
+                  <div className="p-2 bg-blue-50 rounded shrink-0">
                     <Package className="w-5 h-5 text-blue-600" />
                   </div>
-                  <div className="flex-1">
-                    <p className="text-xs text-muted-foreground">Product found</p>
-                    <p className="font-semibold">{result.data.productName}</p>
-                    <p className="text-sm text-muted-foreground">{result.data.barcode}</p>
-                    {result.data.category && <Badge variant="secondary" className="mt-1 text-xs">{result.data.category}</Badge>}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Product</p>
+                    <p className="font-semibold truncate">{result.data.productName}</p>
+                    <p className="text-xs font-mono text-muted-foreground">{result.data.barcode}</p>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {result.data.category && <Badge variant="secondary" className="text-xs">{result.data.category}</Badge>}
+                      {result.data.unit && <Badge variant="outline" className="text-xs">{result.data.unit}</Badge>}
+                    </div>
                   </div>
                 </div>
                 <Separator />
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Button size="sm" variant="outline" asChild>
-                    <a href={`#/products/${result.data.id}`}>View Product</a>
+                    <a href={`#/products/${result.data.id}`}>
+                      <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> View Product
+                    </a>
+                  </Button>
+                  <Button size="sm" variant="outline" asChild>
+                    <a href="#/inventory">Inventory</a>
                   </Button>
                 </div>
               </div>
             )}
+
             {result.type === "asset" && result.data && (
               <div className="space-y-3">
                 <div className="flex items-start gap-3">
-                  <div className="p-2 bg-green-50 rounded">
+                  <div className="p-2 bg-green-50 rounded shrink-0">
                     <Briefcase className="w-5 h-5 text-green-600" />
                   </div>
-                  <div className="flex-1">
-                    <p className="text-xs text-muted-foreground">Asset found</p>
-                    <p className="font-semibold">{result.data.assetName}</p>
-                    {result.data.faNumber && <p className="text-sm text-muted-foreground">FA#: {result.data.faNumber}</p>}
-                    {result.data.serialNumber && <p className="text-sm text-muted-foreground">S/N: {result.data.serialNumber}</p>}
-                    {result.data.custodianName && <p className="text-sm text-muted-foreground">Custodian: {result.data.custodianName}</p>}
-                    <Badge variant={result.data.status === "active" ? "default" : "secondary"} className="mt-1 text-xs">{result.data.status}</Badge>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Asset</p>
+                    <p className="font-semibold truncate">{result.data.assetName}</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1.5 text-xs text-muted-foreground">
+                      {result.data.faNumber && <p><span className="font-medium">FA#</span> {result.data.faNumber}</p>}
+                      {result.data.fyNumber && <p><span className="font-medium">FY#</span> {result.data.fyNumber}</p>}
+                      {result.data.serialNumber && <p><span className="font-medium">S/N</span> {result.data.serialNumber}</p>}
+                      {result.data.ccNumber && <p><span className="font-medium">CC#</span> {result.data.ccNumber}</p>}
+                      {result.data.custodianName && <p className="col-span-2"><span className="font-medium">Custodian</span> {result.data.custodianName}</p>}
+                    </div>
+                    <Badge variant={result.data.status === "active" ? "default" : "secondary"} className="mt-2 text-xs">
+                      {result.data.status}
+                    </Badge>
                   </div>
                 </div>
                 <Separator />
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Button size="sm" variant="outline" asChild>
-                    <a href="#/assets">View in Assets</a>
+                    <a href="#/assets">
+                      <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> View Assets
+                    </a>
+                  </Button>
+                  <Button size="sm" variant="outline" asChild>
+                    <a href="#/my-custody">My Custody</a>
                   </Button>
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Scan history */}
+      {history.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Clock className="w-4 h-4" /> Scan History
+              </CardTitle>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setHistory([])}>
+                <Trash2 className="w-3.5 h-3.5 mr-1" /> Clear
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y max-h-64 overflow-y-auto">
+              {history.map(rec => (
+                <div key={rec.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${rec.resultType === "product" ? "bg-blue-500" : rec.resultType === "asset" ? "bg-green-500" : "bg-amber-500"}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-mono truncate">{rec.code}</p>
+                    {rec.name && <p className="text-xs text-muted-foreground truncate">{rec.name}</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <Badge
+                      variant={rec.resultType === "not_found" ? "outline" : "secondary"}
+                      className="text-[10px] px-1.5 py-0"
+                    >
+                      {rec.resultType === "product" ? "Product" : rec.resultType === "asset" ? "Asset" : "Not found"}
+                    </Badge>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {rec.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
