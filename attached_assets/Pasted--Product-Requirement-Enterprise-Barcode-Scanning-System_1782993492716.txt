@@ -1,0 +1,617 @@
+# Product Requirement: Enterprise Barcode & Scanning System
+
+## Objective
+
+Redesign the existing **Barcode & Labels** module into a complete **Barcode Management & Scanning System** that supports the entire inventory lifecycle rather than only barcode generation and printing.
+
+The new module must follow enterprise inventory management best practices used in hospitals and warehouse management systems.
+
+The implementation must preserve the current architecture, maintain backward compatibility, and integrate seamlessly with the existing Products, Assets, Inventory, Transactions, Audit Log, and PWA functionality.
+
+---
+
+# General Requirements
+
+* Do NOT rewrite the application architecture.
+* Preserve existing database structure whenever possible.
+* Add only the minimum required schema changes.
+* All new database changes must be provided as SQL migration scripts.
+* Maintain compatibility with:
+
+  * Supabase mode
+  * Local Database mode
+* Keep all current functionality operational.
+* Follow existing UI/UX design language.
+
+---
+
+# Redesign the Barcode Module
+
+The current module focuses on generating labels.
+
+Instead, redesign it as a complete barcode management system.
+
+Replace the current workflow with the following modules:
+
+## 1. Barcode Assignment
+
+This becomes the primary workflow.
+
+Administrators should be able to:
+
+* Assign a barcode to a Product
+* Assign a barcode to an Asset
+* Replace an existing barcode
+* Remove a barcode
+* Enter a barcode manually
+* Generate a barcode automatically
+* Scan an existing barcode using:
+
+  * USB scanner
+  * Camera scanner
+
+Workflow:
+
+Open Product/Asset
+
+↓
+
+Current Barcode
+
+↓
+
+Choose:
+
+• Scan Barcode
+
+• Generate Barcode
+
+• Manual Entry
+
+↓
+
+Validate uniqueness
+
+↓
+
+Confirm
+
+↓
+
+Save
+
+---
+
+## 2. Barcode Printing
+
+Printing must only occur after a barcode has been assigned.
+
+Support:
+
+* Single label
+* Multiple labels
+* Bulk printing
+* Custom quantity
+* PDF export
+* PNG export
+* SVG export
+* Print preview
+
+Allow administrators to manage templates.
+
+Templates should support:
+
+* Thermal labels
+* Shelf labels
+* Asset stickers
+* QR labels
+* Barcode labels
+
+---
+
+## 3. Scan & Verify
+
+The scanner should NOT be a standalone page.
+
+Instead, it should function as an input device throughout the application.
+
+Create a dedicated verification mode.
+
+When scanning:
+
+The system should identify:
+
+* Product
+* Asset
+* Unknown barcode
+* Duplicate barcode
+
+Display:
+
+* Name
+* Barcode
+* Warehouse
+* Current stock
+* Asset status
+* Current custodian
+
+If the barcode is invalid, display a clear error.
+
+---
+
+## 4. Bulk Barcode Management
+
+Support:
+
+### Excel Import
+
+Columns:
+
+Product
+
+Barcode
+
+or
+
+Asset
+
+Barcode
+
+Update existing records without creating duplicates.
+
+---
+
+### Sequential Scanner Assignment
+
+Allow administrators to:
+
+Select multiple products
+
+↓
+
+Scan barcode
+
+↓
+
+Automatically move to next item
+
+↓
+
+Scan next barcode
+
+↓
+
+Continue until finished
+
+This significantly speeds up barcode registration.
+
+---
+
+# Barcode Rules
+
+Implement:
+
+* Global uniqueness
+* Duplicate prevention
+* Duplicate detection
+* Validation before saving
+
+Never allow the same barcode to exist on two different records.
+
+If duplication occurs:
+
+Display:
+
+Existing owner
+
+New owner
+
+Allow Replace only after administrator confirmation.
+
+---
+
+# Automatic Barcode Generation
+
+Administrators can configure:
+
+* Prefix
+* Starting number
+* Number length
+
+Examples:
+
+PRD-000001
+
+AST-000001
+
+MED-000001
+
+Allow automatic generation for:
+
+Products
+
+Assets
+
+or both.
+
+---
+
+# Barcode Status
+
+Replace "No barcode assigned" with status indicators.
+
+Examples:
+
+Assigned
+
+Missing
+
+Duplicate
+
+Invalid
+
+Printed
+
+Recently Updated
+
+---
+
+# Scanner Integration
+
+Support:
+
+USB barcode scanners
+
+Camera scanners
+
+QR scanners
+
+Supported formats:
+
+Code 128
+
+Code 39
+
+EAN-13
+
+EAN-8
+
+UPC
+
+QR Code
+
+Scanner must work in:
+
+Desktop browsers
+
+Mobile browsers
+
+Installed PWA
+
+---
+
+# Camera Scanner
+
+Fix the current camera scanner.
+
+Current issue:
+
+The camera scanner does not successfully initialize or read barcodes.
+
+Investigate:
+
+* HTTPS permissions
+* Browser compatibility
+* Mobile compatibility
+* PWA camera access
+* Multiple camera selection
+* Camera cleanup
+* Error handling
+
+Requirements:
+
+Show loading indicator.
+
+Automatically stop scanning after success.
+
+Display friendly error messages.
+
+Support front/back camera selection.
+
+---
+
+# Barcode as an Input Method
+
+Treat barcode scanning as an application-wide input mechanism rather than an isolated page.
+
+Scanning should be available throughout the system wherever item identification is required.
+
+---
+
+# Transaction Integration
+
+Integrate barcode scanning into every inventory transaction.
+
+Supported transaction types:
+
+## Receive Stock
+
+Scan
+
+↓
+
+Load Product
+
+↓
+
+Enter:
+
+Batch
+
+Expiry
+
+Supplier
+
+Invoice
+
+Quantity
+
+↓
+
+Save
+
+---
+
+## Dispense
+
+Scan
+
+↓
+
+Automatically identify Product
+
+↓
+
+Automatically select FIFO batch
+
+↓
+
+Enter quantity
+
+↓
+
+Save
+
+---
+
+## Warehouse Transfer
+
+Scan
+
+↓
+
+Select destination warehouse
+
+↓
+
+Quantity
+
+↓
+
+Save
+
+Support continuous scanning mode for multiple items.
+
+---
+
+## Disposal
+
+Scan
+
+↓
+
+Reason
+
+↓
+
+Quantity
+
+↓
+
+Save
+
+---
+
+## Inventory Count
+
+Scan
+
+↓
+
+Enter counted quantity
+
+↓
+
+Next scan
+
+↓
+
+Repeat
+
+---
+
+## Verification
+
+Scan
+
+↓
+
+Verify barcode
+
+↓
+
+Display status
+
+---
+
+# FIFO Enhancement
+
+Whenever possible, barcode scanning should identify the batch automatically.
+
+If the scanned barcode belongs to a specific batch:
+
+Load:
+
+* Product
+* Batch
+* Expiry
+* Warehouse
+* Available quantity
+
+Automatically apply FIFO without requiring manual batch selection.
+
+---
+
+# Scan Modes
+
+Implement dedicated workflows:
+
+Receive Mode
+
+Dispense Mode
+
+Transfer Mode
+
+Disposal Mode
+
+Inventory Count Mode
+
+Verification Mode
+
+Continuous Scan Mode
+
+---
+
+# Audit Log
+
+Record every barcode event.
+
+Examples:
+
+Barcode assigned
+
+Barcode replaced
+
+Barcode removed
+
+Barcode generated
+
+Barcode imported
+
+Barcode printed
+
+Barcode scanned
+
+Verification completed
+
+Include:
+
+Date
+
+Time
+
+User
+
+Old value
+
+New value
+
+Reason
+
+---
+
+# Reports
+
+Create reports for:
+
+Products without barcodes
+
+Assets without barcodes
+
+Duplicate barcodes
+
+Recently updated barcodes
+
+Barcode print history
+
+Barcode scan history
+
+---
+
+# Performance
+
+Optimize scanning experience.
+
+Requirements:
+
+Minimal API calls
+
+Lazy loading
+
+Virtualized lists
+
+Cached templates
+
+Fast scanner response
+
+No duplicate requests
+
+---
+
+# User Experience
+
+The barcode system should feel like an enterprise Warehouse Management System.
+
+Users should rarely search manually.
+
+Instead, the standard workflow throughout the application should become:
+
+**Scan → Identify → Perform Action → Save**
+
+This scan-first approach should become the default interaction model for inventory operations.
+
+---
+
+# Acceptance Criteria
+
+Before completion verify:
+
+✓ Camera scanner works
+
+✓ USB scanner works
+
+✓ PWA scanner works
+
+✓ Mobile scanner works
+
+✓ Barcode assignment works
+
+✓ Barcode replacement works
+
+✓ Duplicate detection works
+
+✓ Bulk assignment works
+
+✓ Bulk import works
+
+✓ Printing works
+
+✓ Transaction integration works
+
+✓ FIFO integration works
+
+✓ Audit logging works
+
+✓ No existing functionality is broken
+
+Finally, provide a summary of all implemented changes, database migrations, new dependencies, and any configuration required.

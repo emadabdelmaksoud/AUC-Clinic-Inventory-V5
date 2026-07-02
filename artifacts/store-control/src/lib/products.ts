@@ -148,3 +148,21 @@ export async function searchProductsAutocomplete(term: string, limit = 8): Promi
 export async function findProductByBarcode(barcode: string): Promise<Product | undefined> {
   return db.products.where("barcode").equals(barcode).first();
 }
+
+/** Dedicated barcode-only update — avoids re-validating the full product schema */
+export async function setProductBarcode(
+  id: string,
+  barcode: string | null,
+  userId?: string,
+): Promise<void> {
+  const old = await db.products.get(id);
+  const normalizedBarcode = barcode?.trim() || null;
+  await db.products.update(id, { barcode: normalizedBarcode, updatedAt: new Date().toISOString() });
+  await addAuditLog({
+    action: "update",
+    tableName: "products",
+    recordId: id,
+    userId: userId ?? null,
+    changes: JSON.stringify({ barcode: { from: old?.barcode ?? null, to: normalizedBarcode } }),
+  });
+}

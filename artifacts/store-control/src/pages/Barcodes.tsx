@@ -2,15 +2,16 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import JsBarcode from "jsbarcode";
 import QRCodeLib from "qrcode";
-import { listProducts } from "@/lib/products";
-import { listAssets } from "@/lib/assets";
+import { listProducts, setProductBarcode } from "@/lib/products";
+import { listAssets, setAssetBarcode } from "@/lib/assets";
 import { listProductUnits } from "@/lib/product-units";
 import { useAuth } from "@/lib/auth";
 import {
   getBarcodeSettings, saveBarcodeSettings, generateNextProductBarcode,
   generateNextAssetBarcode, BARCODE_DEFAULTS,
   LABEL_TEMPLATES, BARCODE_FORMAT_OPTIONS, PRINT_QUANTITIES,
-  type BarcodeSettings, type BarcodeFormat, type LabelTemplate,
+  validateBarcodeUnique, detectAllDuplicates,
+  type BarcodeSettings, type BarcodeFormat, type LabelTemplate, type BarcodeOwner,
 } from "@/lib/barcodes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,10 +28,11 @@ import {
   Briefcase, Plus, Minus, RefreshCw,
   AlertCircle, Save, ChevronRight, Keyboard, Camera, CameraOff,
   Zap, ZapOff, SwitchCamera, CheckCircle2, Clock, Trash2,
-  ExternalLink, RotateCcw,
+  ExternalLink, RotateCcw, X, FileText, Upload, BarChart3,
+  ArrowRight, CheckSquare,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Asset } from "@/lib/db";
+import type { Asset, Product } from "@/lib/db";
 
 // Scan history entry
 interface ScanRecord {
@@ -198,179 +200,145 @@ function QuantitySelector({ value, onChange }: { value: number; onChange: (v: nu
   );
 }
 
-// ── Products tab ───────────────────────────────────────────────────────────────
+// ── Inline barcode status badge ────────────────────────────────────────────────
 
-function ProductsTab({ settings }: { settings: BarcodeSettings }) {
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [selectedUnitIds, setSelectedUnitIds] = useState<Set<string>>(new Set());
-  const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormat>(settings.productBarcodeType);
-  const [template, setTemplate] = useState<LabelTemplate>(settings.defaultTemplate === "qr_asset" ? "medium" : settings.defaultTemplate);
-  const [qty, setQty] = useState(settings.defaultQuantity);
-  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+function BarcodeBadge({ barcode, isDuplicate }: { barcode: string | null; isDuplicate?: boolean }) {
+  if (isDuplicate) return <Badge className="text-[9px] px-1 py-0 h-4 bg-red-100 text-red-700 hover:bg-red-100">Duplicate</Badge>;
+  if (barcode) return <Badge className="text-[9px] px-1 py-0 h-4 bg-green-100 text-green-700 hover:bg-green-100">Assigned</Badge>;
+  return <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-amber-400 text-amber-600">Missing</Badge>;
+}
 
-  const { data: products = [] } = useQuery({
-    queryKey: ["products", search],
-    queryFn: () => listProducts(search),
+// ── Inline barcode assignment panel ───────────────────────────────────────────
+
+interface AssignPanelState { value: string; checking: boolean; duplicate: BarcodeOwner | null; }
+
+function AssignBarcodePanel({
+  entityId, entityName, currentBarcode, entityType, settings,
+  onSaved, onClose,
+}: {
+  entityId: string; entityName: string; currentBarcode: string | null;
+  entityType: "product" | "asset";
+  settings: BarcodeSettings; onSaved: () => void; onClose: () => void;
+}) {
+  const { user } = useAuth();
+  const [mode, setMode] = useState<"manual" | "camera">("manual");
+  const [st, setSt] = useState<AssignPanelState>({ value: "", checking: false, duplicate: null });
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (mode === "manual") setTimeout(() => inputRef.current?.focus(), 60);
+  }, [mode]);
+
+  const setVal = (v: string) => setSt(s => ({ ...s, value: v, duplicate: null }));
+
+  const { mutate: save, isPending: saving } = useMutation({
+    mutationFn: async (barcode: string) => {
+      const bc = barcode.trim();
+      if (!bc) throw new Error("Barcode is required");
+      const dup = await validateBarcodeUnique(bc, entityId, entityType);
+      if (dup) { setSt(s => ({ ...s, duplicate: dup })); throw new Error("duplicate"); }
+      if (entityType === "product") await setProductBarcode(entityId, bc, user?.id);
+      else await setAssetBarcode(entityId, bc, user?.id ?? null, user?.fullName);
+    },
+    onSuccess: () => { toast.success("Barcode assigned"); onSaved(); },
+    onError: (e: any) => { if (e.message !== "duplicate") toast.error(e.message); },
   });
 
-  const { data: units = [] } = useQuery({
-    queryKey: ["units", expandedProduct],
-    queryFn: () => expandedProduct ? listProductUnits(expandedProduct) : Promise.resolve([]),
-    enabled: !!expandedProduct,
+  const { mutate: autoGen, isPending: generating } = useMutation({
+    mutationFn: async () => {
+      const bc = entityType === "product"
+        ? await generateNextProductBarcode(settings)
+        : await generateNextAssetBarcode(settings);
+      const dup = await validateBarcodeUnique(bc, entityId, entityType);
+      if (dup) throw new Error("Generated barcode conflicts — try again");
+      if (entityType === "product") await setProductBarcode(entityId, bc, user?.id);
+      else await setAssetBarcode(entityId, bc, user?.id ?? null, user?.fullName);
+      return bc;
+    },
+    onSuccess: (bc) => { toast.success(`Barcode assigned: ${bc}`); onSaved(); },
+    onError: (e: any) => toast.error(e.message),
   });
 
-  const toggleProduct = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
+  const { mutate: removeBC, isPending: removing } = useMutation({
+    mutationFn: async () => {
+      if (entityType === "product") await setProductBarcode(entityId, null, user?.id);
+      else await setAssetBarcode(entityId, null, user?.id ?? null, user?.fullName);
+    },
+    onSuccess: () => { toast.success("Barcode removed"); onSaved(); },
+    onError: () => toast.error("Failed to remove"),
+  });
 
-  const toggleAll = () => {
-    if (selected.size === products.length) setSelected(new Set());
-    else setSelected(new Set(products.map(p => p.id)));
-  };
-
-  const selectedProducts = products.filter(p => selected.has(p.id));
-  const printItems: { barcode: string; name: string; unit?: string }[] = [];
-  for (const p of selectedProducts) {
-    const bc = p.barcode?.trim();
-    if (bc) {
-      for (let i = 0; i < qty; i++) printItems.push({ barcode: bc, name: p.productName });
-    }
-    const pUnits = selectedUnitIds.size > 0 ? [] : [];
-    for (const u of pUnits) printItems.push(u);
-  }
-  // also include selected units from all products
-  const selectedUnitsList = units.filter(u => selectedUnitIds.has(u.id));
-  for (const u of selectedUnitsList) {
-    if (u.barcode) {
-      const prod = products.find(p => p.id === expandedProduct);
-      for (let i = 0; i < qty; i++) printItems.push({ barcode: u.barcode, name: prod?.productName ?? "", unit: u.unitName });
-    }
-  }
-
-  const noBarcode = selectedProducts.filter(p => !p.barcode?.trim());
+  const handleCameraScan = useCallback((code: string) => {
+    setVal(code);
+    setMode("manual");
+  }, []);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-3 items-end">
-        <div className="flex-1 min-w-48">
-          <Label className="text-xs mb-1 block">Search Products</Label>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-        </div>
-        <div>
-          <Label className="text-xs mb-1 block">Barcode Type</Label>
-          <Select value={barcodeFormat} onValueChange={v => setBarcodeFormat(v as BarcodeFormat)}>
-            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {BARCODE_FORMAT_OPTIONS.map(f => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs mb-1 block">Label Size</Label>
-          <Select value={template} onValueChange={v => setTemplate(v as LabelTemplate)}>
-            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {(Object.entries(LABEL_TEMPLATES) as [LabelTemplate, { name: string; description: string }][])
-                .filter(([k]) => k !== "qr_asset")
-                .map(([k, v]) => <SelectItem key={k} value={k}>{v.name} ({v.description})</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+    <div className="mx-3 mb-2 border rounded-lg bg-background shadow-md p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold">Assign Barcode</p>
+        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={onClose}><X className="w-3.5 h-3.5" /></Button>
       </div>
 
-      <div className="rounded-md border overflow-hidden">
-        <div className="flex items-center px-3 py-2 bg-muted/50 border-b gap-2">
-          <Checkbox checked={selected.size === products.length && products.length > 0} onCheckedChange={toggleAll} />
-          <span className="text-xs text-muted-foreground">{selected.size} of {products.length} selected</span>
-        </div>
-        <div className="max-h-56 overflow-y-auto divide-y">
-          {products.length === 0 && (
-            <p className="text-center text-sm text-muted-foreground py-6">No products found</p>
-          )}
-          {products.map(p => (
-            <div key={p.id}>
-              <div className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30">
-                <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleProduct(p.id)} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="text-sm font-medium truncate">{p.productName}</p>
-                    {p.category && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{p.category}</span>}
-                  </div>
-                  {p.barcode ? (
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-xs font-mono text-muted-foreground">{p.barcode}</span>
-                      <Badge className="text-[9px] px-1 py-0 h-4 bg-green-100 text-green-700 hover:bg-green-100">Generated</Badge>
-                    </div>
-                  ) : (
-                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 mt-0.5 border-amber-400 text-amber-600">
-                      Missing Barcode
-                    </Badge>
-                  )}
-                </div>
-                <button
-                  onClick={() => setExpandedProduct(expandedProduct === p.id ? null : p.id)}
-                  className="text-muted-foreground hover:text-foreground p-1"
-                >
-                  <ChevronRight className={`w-4 h-4 transition-transform ${expandedProduct === p.id ? "rotate-90" : ""}`} />
-                </button>
-              </div>
-              {expandedProduct === p.id && units.length > 0 && (
-                <div className="pl-10 pr-3 pb-2 bg-muted/20 divide-y divide-border/50">
-                  {units.map(u => (
-                    <div key={u.id} className="flex items-center gap-3 py-1.5">
-                      <Checkbox
-                        checked={selectedUnitIds.has(u.id)}
-                        onCheckedChange={() => {
-                          setSelectedUnitIds(prev => {
-                            const next = new Set(prev);
-                            next.has(u.id) ? next.delete(u.id) : next.add(u.id);
-                            return next;
-                          });
-                        }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium">{u.unitName}</p>
-                        {u.barcode ? (
-                          <p className="text-[10px] font-mono text-muted-foreground">{u.barcode}</p>
-                        ) : (
-                          <p className="text-[10px] text-amber-600">No barcode</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {noBarcode.length > 0 && (
-        <div className="flex items-start gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded p-2.5 text-xs">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{noBarcode.length} selected product(s) have no barcode and will be skipped. Assign barcodes in Products.</span>
+      {currentBarcode && (
+        <div className="flex items-center gap-2 px-2 py-1.5 bg-muted/50 rounded text-xs">
+          <span className="text-muted-foreground shrink-0">Current:</span>
+          <span className="font-mono font-medium flex-1 truncate">{currentBarcode}</span>
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-destructive hover:text-destructive text-xs shrink-0" onClick={() => removeBC()} disabled={removing}>
+            Remove
+          </Button>
         </div>
       )}
 
-      {selected.size > 0 && (
-        <div className="space-y-3">
-          <QuantitySelector value={qty} onChange={setQty} />
-          {printItems.length > 0 ? (
-            <PrintPreview title={`${printItems.length} label(s) ready`}>
-              {printItems.map((item, i) => (
-                <ProductLabel key={i} barcode={item.barcode} name={item.name} unit={item.unit} template={template} format={barcodeFormat} />
-              ))}
-            </PrintPreview>
-          ) : (
-            <p className="text-sm text-muted-foreground">Selected products have no barcodes to print.</p>
+      <div className="flex gap-1.5">
+        <Button size="sm" variant={mode === "manual" ? "default" : "outline"} className="h-7 flex-1 text-xs" onClick={() => setMode("manual")}>
+          <Keyboard className="w-3 h-3 mr-1" /> Manual / USB
+        </Button>
+        <Button size="sm" variant={mode === "camera" ? "default" : "outline"} className="h-7 flex-1 text-xs" onClick={() => setMode("camera")}>
+          <Camera className="w-3 h-3 mr-1" /> Camera
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 flex-1 text-xs" onClick={() => autoGen()} disabled={generating}>
+          <RefreshCw className={`w-3 h-3 mr-1 ${generating ? "animate-spin" : ""}`} /> Auto
+        </Button>
+      </div>
+
+      {mode === "manual" && (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <Input
+              ref={inputRef}
+              value={st.value}
+              onChange={e => setVal(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); save(st.value); } }}
+              placeholder="Type or scan barcode…"
+              className="font-mono h-8 text-sm"
+              autoComplete="off"
+            />
+            <Button size="sm" className="h-8 px-3" onClick={() => save(st.value)} disabled={saving || !st.value.trim()}>
+              {saving ? "…" : "Save"}
+            </Button>
+          </div>
+          {st.duplicate && (
+            <div className="flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/30 rounded text-xs text-destructive">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Barcode already in use</p>
+                <p>Assigned to {st.duplicate.type}: <span className="font-bold">{st.duplicate.name}</span></p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === "camera" && (
+        <div className="space-y-2">
+          <CameraScanner onDetected={handleCameraScan} />
+          {st.value && (
+            <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded text-sm">
+              <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+              <span className="font-mono flex-1 truncate">{st.value}</span>
+              <Button size="sm" className="h-7 px-2 text-xs" onClick={() => save(st.value)} disabled={saving}>Save</Button>
+            </div>
           )}
         </div>
       )}
@@ -378,66 +346,388 @@ function ProductsTab({ settings }: { settings: BarcodeSettings }) {
   );
 }
 
+// ── Sequential Scanner Mode ───────────────────────────────────────────────────
+
+function SequentialScanMode({
+  items, entityType, settings, userId, userName, onClose, onRefresh,
+}: {
+  items: Array<{ id: string; name: string; barcode: string | null }>;
+  entityType: "product" | "asset";
+  settings: BarcodeSettings;
+  userId?: string;
+  userName?: string | null;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  const [idx, setIdx] = useState(0);
+  const [scanned, setScanned] = useState<string>("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, [idx]);
+
+  const current = items[idx];
+  const isDone = idx >= items.length;
+
+  const { mutate: assign, isPending } = useMutation({
+    mutationFn: async (barcode: string) => {
+      const bc = barcode.trim();
+      if (!bc) throw new Error("Barcode required");
+      const dup = await validateBarcodeUnique(bc, current.id, entityType);
+      if (dup) throw new Error(`Already assigned to ${dup.type}: ${dup.name}`);
+      if (entityType === "product") await setProductBarcode(current.id, bc, userId);
+      else await setAssetBarcode(current.id, bc, userId ?? null, userName);
+    },
+    onSuccess: () => {
+      toast.success(`${current.name}: barcode saved`);
+      setScanned("");
+      onRefresh();
+      setIdx(i => i + 1);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleScan = useCallback((code: string) => {
+    setScanned(code);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  if (isDone) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-8">
+        <CheckCircle2 className="w-12 h-12 text-green-500" />
+        <div className="text-center">
+          <p className="font-semibold text-lg">All done!</p>
+          <p className="text-sm text-muted-foreground">{items.length} items processed</p>
+        </div>
+        <Button onClick={onClose}>Close</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-muted-foreground">Item {idx + 1} of {items.length}</p>
+          <p className="font-semibold text-base">{current.name}</p>
+          {current.barcode && <p className="text-xs text-muted-foreground font-mono">Current: {current.barcode}</p>}
+        </div>
+        <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+      </div>
+
+      <div className="w-full bg-secondary rounded-full h-1.5">
+        <div className="bg-primary h-1.5 rounded-full transition-all" style={{ width: `${(idx / items.length) * 100}%` }} />
+      </div>
+
+      <Card>
+        <CardContent className="pt-4 space-y-3">
+          <p className="text-sm font-medium">Scan or type the barcode for this item:</p>
+          <div className="flex gap-2">
+            <Input
+              ref={inputRef}
+              value={scanned}
+              onChange={e => setScanned(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); assign(scanned); } }}
+              placeholder="Scan or type barcode…"
+              className="font-mono"
+              autoComplete="off"
+            />
+            <Button onClick={() => assign(scanned)} disabled={isPending || !scanned.trim()}>
+              {isPending ? "…" : "Next"} <ArrowRight className="w-3.5 h-3.5 ml-1" />
+            </Button>
+          </div>
+          <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setScanned(""); setIdx(i => i + 1); }}>
+            Skip this item
+          </Button>
+        </CardContent>
+      </Card>
+
+      <div className="text-center">
+        <p className="text-xs text-muted-foreground">USB/Bluetooth scanners auto-detected · or use camera below</p>
+      </div>
+      <CameraScanner onDetected={handleScan} />
+    </div>
+  );
+}
+
+// ── Products tab ───────────────────────────────────────────────────────────────
+
+function ProductsTab({ settings }: { settings: BarcodeSettings }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [assignId, setAssignId] = useState<string | null>(null);
+  const [seqMode, setSeqMode] = useState(false);
+  const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormat>(settings.productBarcodeType);
+  const [template, setTemplate] = useState<LabelTemplate>(settings.defaultTemplate === "qr_asset" ? "medium" : settings.defaultTemplate);
+  const [qty, setQty] = useState(settings.defaultQuantity);
+  const [showPrint, setShowPrint] = useState(false);
+
+  const { data: products = [] } = useQuery({
+    queryKey: ["products", search],
+    queryFn: () => listProducts(search),
+  });
+
+  const { data: units = [] } = useQuery({
+    queryKey: ["units", expandedId],
+    queryFn: () => expandedId ? listProductUnits(expandedId) : Promise.resolve([]),
+    enabled: !!expandedId,
+  });
+
+  // Build duplicate barcode set from the loaded product list
+  const duplicateBarcodes = new Set<string>();
+  const bcCount = new Map<string, number>();
+  for (const p of products) {
+    if (p.barcode) bcCount.set(p.barcode, (bcCount.get(p.barcode) ?? 0) + 1);
+  }
+  for (const [bc, n] of bcCount) { if (n > 1) duplicateBarcodes.add(bc); }
+
+  const toggleProduct = (id: string) => setSelected(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+  const toggleAll = () => {
+    if (selected.size === products.length) setSelected(new Set());
+    else setSelected(new Set(products.map(p => p.id)));
+  };
+
+  const selectedProducts = products.filter(p => selected.has(p.id));
+  const printItems: { barcode: string; name: string }[] = [];
+  for (const p of selectedProducts) {
+    const bc = p.barcode?.trim();
+    if (bc) for (let i = 0; i < qty; i++) printItems.push({ barcode: bc, name: p.productName });
+  }
+  const noBarcode = selectedProducts.filter(p => !p.barcode?.trim());
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ["products"] });
+
+  if (seqMode) {
+    const seqItems = (selected.size > 0 ? selectedProducts : products).map(p => ({
+      id: p.id, name: p.productName, barcode: p.barcode,
+    }));
+    return (
+      <SequentialScanMode
+        items={seqItems}
+        entityType="product"
+        settings={settings}
+        userId={user?.id}
+        userName={user?.fullName}
+        onClose={() => setSeqMode(false)}
+        onRefresh={refresh}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap gap-3 items-end">
+        <div className="flex-1 min-w-48">
+          <Label className="text-xs mb-1 block">Search Products</Label>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
+            <Input className="pl-9" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setSeqMode(true)} title="Scan barcodes for multiple products sequentially">
+          <ScanLine className="w-3.5 h-3.5 mr-1.5" /> Sequential Scan
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setShowPrint(v => !v)}>
+          <Printer className="w-3.5 h-3.5 mr-1.5" /> {showPrint ? "Hide Print" : "Print Labels"}
+        </Button>
+      </div>
+
+      {/* Print settings (collapsible) */}
+      {showPrint && (
+        <Card className="border-dashed">
+          <CardContent className="pt-4 space-y-3">
+            <div className="flex flex-wrap gap-3">
+              <div className="flex-1 min-w-40">
+                <Label className="text-xs mb-1 block">Barcode Type</Label>
+                <Select value={barcodeFormat} onValueChange={v => setBarcodeFormat(v as BarcodeFormat)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{BARCODE_FORMAT_OPTIONS.map(f => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="flex-1 min-w-40">
+                <Label className="text-xs mb-1 block">Label Size</Label>
+                <Select value={template} onValueChange={v => setTemplate(v as LabelTemplate)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(LABEL_TEMPLATES) as [LabelTemplate, { name: string; description: string }][])
+                      .filter(([k]) => k !== "qr_asset")
+                      .map(([k, v]) => <SelectItem key={k} value={k}>{v.name} ({v.description})</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {selected.size > 0 && (
+              <>
+                <QuantitySelector value={qty} onChange={setQty} />
+                {noBarcode.length > 0 && (
+                  <p className="text-xs text-amber-600">
+                    <AlertCircle className="w-3.5 h-3.5 inline mr-1" />
+                    {noBarcode.length} selected product(s) have no barcode — assign barcodes first.
+                  </p>
+                )}
+                {printItems.length > 0 ? (
+                  <PrintPreview title={`${printItems.length} label(s) ready`}>
+                    {printItems.map((item, i) => <ProductLabel key={i} barcode={item.barcode} name={item.name} template={template} format={barcodeFormat} />)}
+                  </PrintPreview>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Select products with barcodes to print.</p>
+                )}
+              </>
+            )}
+            {selected.size === 0 && <p className="text-sm text-muted-foreground">Select products below to print their labels.</p>}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Product list */}
+      <div className="rounded-md border overflow-hidden">
+        <div className="flex items-center px-3 py-2 bg-muted/50 border-b gap-2">
+          <Checkbox checked={selected.size === products.length && products.length > 0} onCheckedChange={toggleAll} />
+          <span className="text-xs text-muted-foreground flex-1">{selected.size} of {products.length} selected</span>
+          {selected.size > 0 && (
+            <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setSelected(new Set())}>Clear</Button>
+          )}
+        </div>
+        <div className="max-h-[28rem] overflow-y-auto divide-y">
+          {products.length === 0 && <p className="text-center text-sm text-muted-foreground py-6">No products found</p>}
+          {products.map(p => {
+            const isDup = !!(p.barcode && duplicateBarcodes.has(p.barcode));
+            const isAssigning = assignId === p.id;
+            return (
+              <div key={p.id}>
+                <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/20">
+                  <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleProduct(p.id)} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-medium truncate">{p.productName}</p>
+                      {p.category && <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">{p.category}</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {p.barcode && <span className="text-xs font-mono text-muted-foreground">{p.barcode}</span>}
+                      <BarcodeBadge barcode={p.barcode} isDuplicate={isDup} />
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={isAssigning ? "default" : "outline"}
+                    className="h-7 text-xs px-2 shrink-0"
+                    onClick={() => setAssignId(isAssigning ? null : p.id)}
+                  >
+                    <QrCode className="w-3 h-3 mr-1" /> {isAssigning ? "Close" : "Assign"}
+                  </Button>
+                  <button
+                    onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                    className="text-muted-foreground hover:text-foreground p-1 shrink-0"
+                  >
+                    <ChevronRight className={`w-4 h-4 transition-transform ${expandedId === p.id ? "rotate-90" : ""}`} />
+                  </button>
+                </div>
+
+                {isAssigning && (
+                  <AssignBarcodePanel
+                    entityId={p.id}
+                    entityName={p.productName}
+                    currentBarcode={p.barcode}
+                    entityType="product"
+                    settings={settings}
+                    onSaved={() => { setAssignId(null); refresh(); }}
+                    onClose={() => setAssignId(null)}
+                  />
+                )}
+
+                {expandedId === p.id && units.length > 0 && (
+                  <div className="pl-10 pr-3 pb-2 bg-muted/20 divide-y divide-border/50">
+                    {units.map(u => (
+                      <div key={u.id} className="flex items-center gap-2 py-1.5">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium">{u.unitName}</p>
+                          {u.barcode ? (
+                            <span className="text-[10px] font-mono text-muted-foreground">{u.barcode}</span>
+                          ) : (
+                            <span className="text-[10px] text-amber-600">No barcode</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Assets tab ─────────────────────────────────────────────────────────────────
 
 function AssetsTab({ settings }: { settings: BarcodeSettings }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [assignId, setAssignId] = useState<string | null>(null);
+  const [seqMode, setSeqMode] = useState(false);
   const [template, setTemplate] = useState<LabelTemplate>("qr_asset");
   const [qty, setQty] = useState(settings.defaultQuantity);
-  const qc = useQueryClient();
+  const [showPrint, setShowPrint] = useState(false);
 
-  const { data: assets = [] } = useQuery({
-    queryKey: ["assets"],
-    queryFn: () => listAssets(),
-  });
+  const { data: assets = [] } = useQuery({ queryKey: ["assets"], queryFn: listAssets });
 
   const filtered = assets.filter(a =>
     !search ||
     a.assetName.toLowerCase().includes(search.toLowerCase()) ||
     a.faNumber?.toLowerCase().includes(search.toLowerCase()) ||
-    a.serialNumber?.toLowerCase().includes(search.toLowerCase()) ||
-    a.ccNumber?.toLowerCase().includes(search.toLowerCase())
+    a.serialNumber?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const { mutate: generateBarcode, isPending: generating } = useMutation({
-    mutationFn: async (assetId: string) => {
-      const code = await generateNextAssetBarcode(settings);
-      const { updateAsset } = await import("@/lib/assets");
-      const asset = assets.find(a => a.id === assetId);
-      if (!asset) throw new Error("Asset not found");
-      await updateAsset(assetId, { ...asset, barcode: code } as any, null);
-      return code;
-    },
-    onSuccess: (code) => {
-      toast.success(`Barcode generated: ${code}`);
-      qc.invalidateQueries({ queryKey: ["assets"] });
-    },
-    onError: () => toast.error("Failed to generate barcode"),
+  const duplicateBarcodes = new Set<string>();
+  const bcCount = new Map<string, number>();
+  for (const a of assets) {
+    if (a.barcode) bcCount.set(a.barcode, (bcCount.get(a.barcode) ?? 0) + 1);
+  }
+  for (const [bc, n] of bcCount) { if (n > 1) duplicateBarcodes.add(bc); }
+
+  const toggleAsset = (id: string) => setSelected(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
   });
-
-  const toggleAsset = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
   const toggleAll = () => {
     if (selected.size === filtered.length) setSelected(new Set());
     else setSelected(new Set(filtered.map(a => a.id)));
   };
 
   const selectedAssets = filtered.filter(a => selected.has(a.id));
+  const getBarcodeValue = (a: Asset) => a.barcode?.trim() || a.faNumber || a.serialNumber || a.id;
 
-  const getBarcodeValue = (asset: Asset) =>
-    (asset as any).barcode?.trim() || asset.faNumber || asset.serialNumber || asset.id;
-
-  const printItems: { asset: Asset; barcodeValue: string }[] = [];
-  for (const a of selectedAssets) {
+  const printItems = selectedAssets.flatMap(a => {
     const bv = getBarcodeValue(a);
-    for (let i = 0; i < qty; i++) printItems.push({ asset: a, barcodeValue: bv });
+    return Array.from({ length: qty }, () => ({ asset: a, barcodeValue: bv }));
+  });
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ["assets"] });
+
+  if (seqMode) {
+    const seqItems = (selected.size > 0 ? selectedAssets : filtered).map(a => ({
+      id: a.id, name: a.assetName, barcode: a.barcode,
+    }));
+    return (
+      <SequentialScanMode
+        items={seqItems}
+        entityType="asset"
+        settings={settings}
+        userId={user?.id}
+        userName={user?.fullName}
+        onClose={() => setSeqMode(false)}
+        onRefresh={refresh}
+      />
+    );
   }
 
   return (
@@ -447,85 +737,472 @@ function AssetsTab({ settings }: { settings: BarcodeSettings }) {
           <Label className="text-xs mb-1 block">Search Assets</Label>
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Name, FA#, serial..." value={search} onChange={e => setSearch(e.target.value)} />
+            <Input className="pl-9" placeholder="Name, FA#, serial…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
         </div>
-        <div>
-          <Label className="text-xs mb-1 block">Label Template</Label>
-          <Select value={template} onValueChange={v => setTemplate(v as LabelTemplate)}>
-            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {(Object.entries(LABEL_TEMPLATES) as [LabelTemplate, { name: string; description: string }][]).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v.name} ({v.description})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Button variant="outline" size="sm" onClick={() => setSeqMode(true)}>
+          <ScanLine className="w-3.5 h-3.5 mr-1.5" /> Sequential Scan
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setShowPrint(v => !v)}>
+          <Printer className="w-3.5 h-3.5 mr-1.5" /> {showPrint ? "Hide Print" : "Print Labels"}
+        </Button>
       </div>
+
+      {showPrint && (
+        <Card className="border-dashed">
+          <CardContent className="pt-4 space-y-3">
+            <div>
+              <Label className="text-xs mb-1 block">Label Template</Label>
+              <Select value={template} onValueChange={v => setTemplate(v as LabelTemplate)}>
+                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.entries(LABEL_TEMPLATES) as [LabelTemplate, { name: string; description: string }][]).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v.name} ({v.description})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {selected.size > 0 ? (
+              <>
+                <QuantitySelector value={qty} onChange={setQty} />
+                <PrintPreview title={`${printItems.length} label(s) ready`}>
+                  {printItems.map((item, i) => <AssetLabel key={i} asset={item.asset} barcodeValue={item.barcodeValue} template={template} />)}
+                </PrintPreview>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Select assets below to print their labels.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="rounded-md border overflow-hidden">
         <div className="flex items-center px-3 py-2 bg-muted/50 border-b gap-2">
           <Checkbox checked={selected.size === filtered.length && filtered.length > 0} onCheckedChange={toggleAll} />
-          <span className="text-xs text-muted-foreground">{selected.size} of {filtered.length} selected</span>
+          <span className="text-xs text-muted-foreground flex-1">{selected.size} of {filtered.length} selected</span>
+          {selected.size > 0 && (
+            <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setSelected(new Set())}>Clear</Button>
+          )}
         </div>
-        <div className="max-h-64 overflow-y-auto divide-y">
+        <div className="max-h-[28rem] overflow-y-auto divide-y">
           {filtered.length === 0 && <p className="text-center text-sm text-muted-foreground py-6">No assets found</p>}
           {filtered.map(a => {
-            const bv = getBarcodeValue(a);
-            const hasDedicatedBarcode = !!(a as any).barcode?.trim();
+            const isDup = !!(a.barcode && duplicateBarcodes.has(a.barcode));
+            const isAssigning = assignId === a.id;
             return (
-              <div key={a.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30">
-                <Checkbox checked={selected.has(a.id)} onCheckedChange={() => toggleAsset(a.id)} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="text-sm font-medium truncate">{a.assetName}</p>
-                    <Badge variant={a.status === "active" ? "default" : "secondary"} className="text-[9px] px-1.5 py-0 h-4 shrink-0">
-                      {a.status}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {a.faNumber && <span className="text-[10px] text-muted-foreground">FA: {a.faNumber}</span>}
-                    {a.serialNumber && <span className="text-[10px] text-muted-foreground">S/N: {a.serialNumber}</span>}
-                    {a.custodianName && <span className="text-[10px] text-muted-foreground">👤 {a.custodianName}</span>}
-                  </div>
-                  {hasDedicatedBarcode ? (
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] font-mono text-muted-foreground">{(a as any).barcode}</span>
-                      <Badge className="text-[9px] px-1 py-0 h-4 bg-green-100 text-green-700 hover:bg-green-100">Generated</Badge>
+              <div key={a.id}>
+                <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/20">
+                  <Checkbox checked={selected.has(a.id)} onCheckedChange={() => toggleAsset(a.id)} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-medium truncate">{a.assetName}</p>
+                      <Badge variant={a.status === "active" ? "default" : "secondary"} className="text-[9px] px-1.5 py-0 h-4 shrink-0">
+                        {a.status}
+                      </Badge>
                     </div>
-                  ) : (
-                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 mt-0.5 border-amber-400 text-amber-600">
-                      Missing Barcode
-                    </Badge>
-                  )}
-                </div>
-                {!hasDedicatedBarcode && (
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      {a.faNumber && <span className="text-[10px] text-muted-foreground">FA: {a.faNumber}</span>}
+                      {a.serialNumber && <span className="text-[10px] text-muted-foreground">S/N: {a.serialNumber}</span>}
+                      {a.custodianName && <span className="text-[10px] text-muted-foreground">👤 {a.custodianName}</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {a.barcode && <span className="text-[10px] font-mono text-muted-foreground">{a.barcode}</span>}
+                      <BarcodeBadge barcode={a.barcode} isDuplicate={isDup} />
+                    </div>
+                  </div>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant={isAssigning ? "default" : "outline"}
                     className="h-7 text-xs px-2 shrink-0"
-                    onClick={() => generateBarcode(a.id)}
-                    disabled={generating}
+                    onClick={() => setAssignId(isAssigning ? null : a.id)}
                   >
-                    <RefreshCw className="w-3 h-3 mr-1" /> Generate
+                    <QrCode className="w-3 h-3 mr-1" /> {isAssigning ? "Close" : "Assign"}
                   </Button>
+                </div>
+
+                {isAssigning && (
+                  <AssignBarcodePanel
+                    entityId={a.id}
+                    entityName={a.assetName}
+                    currentBarcode={a.barcode}
+                    entityType="asset"
+                    settings={settings}
+                    onSaved={() => { setAssignId(null); refresh(); }}
+                    onClose={() => setAssignId(null)}
+                  />
                 )}
               </div>
             );
           })}
         </div>
       </div>
+    </div>
+  );
+}
 
-      {selected.size > 0 && (
-        <div className="space-y-3">
-          <QuantitySelector value={qty} onChange={setQty} />
-          <PrintPreview title={`${printItems.length} label(s) ready`}>
-            {printItems.map((item, i) => (
-              <AssetLabel key={i} asset={item.asset} barcodeValue={item.barcodeValue} template={template} />
-            ))}
-          </PrintPreview>
-        </div>
+// ── Import Tab ─────────────────────────────────────────────────────────────────
+
+function ImportTab({ settings }: { settings: BarcodeSettings }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [csvText, setCsvText] = useState("");
+  const [entityType, setEntityType] = useState<"product" | "asset">("product");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  interface ImportRow { identifier: string; barcode: string; matched?: string; conflict?: string; status?: "ok" | "conflict" | "not_found"; }
+  const [rows, setRows] = useState<ImportRow[]>([]);
+  const [parsed, setParsed] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const { data: products = [] } = useQuery({ queryKey: ["products", ""], queryFn: () => listProducts("") });
+  const { data: assets = [] } = useQuery({ queryKey: ["assets"], queryFn: listAssets });
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = ev => setCsvText((ev.target?.result as string) ?? "");
+    reader.readAsText(f);
+  };
+
+  const parseCSV = () => {
+    const lines = csvText.trim().split("\n").filter(Boolean);
+    const parsed: ImportRow[] = [];
+    for (const line of lines) {
+      const parts = line.split(/,|\t/).map(p => p.trim().replace(/^["']|["']$/g, ""));
+      if (parts.length < 2) continue;
+      const [identifier, barcode] = parts;
+      if (!identifier || !barcode) continue;
+
+      const row: ImportRow = { identifier, barcode };
+      const idLower = identifier.toLowerCase();
+
+      if (entityType === "product") {
+        const match = products.find(p =>
+          p.productName.toLowerCase() === idLower ||
+          p.productCode.toLowerCase() === idLower ||
+          p.barcode === identifier
+        );
+        if (match) {
+          row.matched = match.productName;
+          if (match.barcode && match.barcode !== barcode) row.conflict = `Has: ${match.barcode}`;
+          row.status = row.conflict ? "conflict" : "ok";
+        } else {
+          row.status = "not_found";
+        }
+      } else {
+        const match = assets.find(a =>
+          a.assetName.toLowerCase() === idLower ||
+          a.faNumber?.toLowerCase() === idLower ||
+          a.serialNumber?.toLowerCase() === idLower
+        );
+        if (match) {
+          row.matched = match.assetName;
+          if (match.barcode && match.barcode !== barcode) row.conflict = `Has: ${match.barcode}`;
+          row.status = row.conflict ? "conflict" : "ok";
+        } else {
+          row.status = "not_found";
+        }
+      }
+
+      parsed.push(row);
+    }
+    setRows(parsed);
+    setParsed(true);
+  };
+
+  const runImport = async (overwriteConflicts: boolean) => {
+    setImporting(true);
+    let ok = 0; let skipped = 0; let errors = 0;
+    try {
+      for (const row of rows) {
+        if (row.status === "not_found") { skipped++; continue; }
+        if (row.status === "conflict" && !overwriteConflicts) { skipped++; continue; }
+        try {
+          // Find the record again
+          if (entityType === "product") {
+            const match = products.find(p => p.productName.toLowerCase() === row.identifier.toLowerCase() || p.productCode.toLowerCase() === row.identifier.toLowerCase());
+            if (match) { await setProductBarcode(match.id, row.barcode, user?.id); ok++; }
+          } else {
+            const match = assets.find(a => a.assetName.toLowerCase() === row.identifier.toLowerCase() || a.faNumber?.toLowerCase() === row.identifier.toLowerCase());
+            if (match) { await setAssetBarcode(match.id, row.barcode, user?.id ?? null, user?.fullName); ok++; }
+          }
+        } catch { errors++; }
+      }
+      toast.success(`Import complete: ${ok} updated, ${skipped} skipped, ${errors} errors`);
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["assets"] });
+      setRows([]); setCsvText(""); setParsed(false);
+    } finally { setImporting(false); }
+  };
+
+  return (
+    <div className="space-y-5 max-w-xl">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Upload className="w-4 h-4" /> Import Barcodes from CSV
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label className="text-xs mb-1.5 block">Target</Label>
+            <div className="flex gap-2">
+              <Button size="sm" variant={entityType === "product" ? "default" : "outline"} onClick={() => { setEntityType("product"); setParsed(false); }}>
+                <Package className="w-3.5 h-3.5 mr-1.5" /> Products
+              </Button>
+              <Button size="sm" variant={entityType === "asset" ? "default" : "outline"} onClick={() => { setEntityType("asset"); setParsed(false); }}>
+                <Briefcase className="w-3.5 h-3.5 mr-1.5" /> Assets
+              </Button>
+            </div>
+          </div>
+
+          <div className="p-3 bg-muted/40 rounded text-xs space-y-1 text-muted-foreground">
+            <p className="font-medium text-foreground">CSV format (no header required):</p>
+            <p>Column 1: {entityType === "product" ? "Product name or product code" : "Asset name or FA number"}</p>
+            <p>Column 2: Barcode value</p>
+            <p>Example: <span className="font-mono">Amoxicillin 500mg, PRD-000001</span></p>
+          </div>
+
+          <div>
+            <Label className="text-xs mb-1.5 block">Upload file or paste CSV text</Label>
+            <input ref={fileRef} type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={handleFile} />
+            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="mb-2">
+              <Upload className="w-3.5 h-3.5 mr-1.5" /> Choose File
+            </Button>
+            <textarea
+              className="w-full h-32 text-xs font-mono p-2 border rounded resize-none bg-background"
+              placeholder={"Product Name,BARCODE\nAnother Product,BARCODE2"}
+              value={csvText}
+              onChange={e => { setCsvText(e.target.value); setParsed(false); }}
+            />
+          </div>
+
+          <Button onClick={parseCSV} disabled={!csvText.trim()} className="w-full">
+            <FileText className="w-4 h-4 mr-2" /> Preview Import
+          </Button>
+        </CardContent>
+      </Card>
+
+      {parsed && rows.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Preview — {rows.length} rows</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y max-h-64 overflow-y-auto">
+              {rows.map((r, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-2 text-xs">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{r.identifier}</p>
+                    {r.matched && <p className="text-muted-foreground truncate">→ {r.matched}</p>}
+                    {r.conflict && <p className="text-amber-600">{r.conflict}</p>}
+                  </div>
+                  <span className="font-mono text-muted-foreground shrink-0">{r.barcode}</span>
+                  <Badge
+                    variant={r.status === "ok" ? "default" : r.status === "conflict" ? "outline" : "secondary"}
+                    className={`text-[9px] px-1.5 py-0 h-4 shrink-0 ${r.status === "ok" ? "bg-green-100 text-green-700 hover:bg-green-100" : r.status === "conflict" ? "border-amber-400 text-amber-600" : ""}`}
+                  >
+                    {r.status === "ok" ? "Ready" : r.status === "conflict" ? "Conflict" : "Not found"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+            <div className="p-4 space-y-2 border-t">
+              <div className="flex gap-2 flex-wrap text-xs text-muted-foreground">
+                <span className="text-green-700 font-medium">{rows.filter(r => r.status === "ok").length} ready</span>
+                <span className="text-amber-600 font-medium">{rows.filter(r => r.status === "conflict").length} conflicts</span>
+                <span>{rows.filter(r => r.status === "not_found").length} not found</span>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => runImport(false)} disabled={importing} className="flex-1">
+                  Import (skip conflicts)
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => runImport(true)} disabled={importing} className="flex-1">
+                  Import (overwrite all)
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
+
+      {parsed && rows.length === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-4">No valid rows found in the CSV.</p>
+      )}
+    </div>
+  );
+}
+
+// ── Reports Tab ────────────────────────────────────────────────────────────────
+
+function ReportsTab({ settings }: { settings: BarcodeSettings }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [generatingAll, setGeneratingAll] = useState(false);
+
+  const { data: products = [] } = useQuery({ queryKey: ["products", ""], queryFn: () => listProducts("") });
+  const { data: assets = [] } = useQuery({ queryKey: ["assets"], queryFn: listAssets });
+
+  const { data: duplicates } = useQuery({
+    queryKey: ["barcode_duplicates"],
+    queryFn: detectAllDuplicates,
+    staleTime: 30000,
+  });
+
+  const missingProducts = products.filter(p => !p.barcode?.trim());
+  const missingAssets = assets.filter(a => !a.barcode?.trim());
+
+  const generateAllProductBarcodes = async () => {
+    setGeneratingAll(true);
+    let ok = 0;
+    try {
+      for (const p of missingProducts) {
+        const bc = await generateNextProductBarcode(settings);
+        await setProductBarcode(p.id, bc, user?.id);
+        ok++;
+      }
+      toast.success(`Generated ${ok} barcodes`);
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["barcode_duplicates"] });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setGeneratingAll(false);
+    }
+  };
+
+  const generateAllAssetBarcodes = async () => {
+    setGeneratingAll(true);
+    let ok = 0;
+    try {
+      for (const a of missingAssets) {
+        const bc = await generateNextAssetBarcode(settings);
+        await setAssetBarcode(a.id, bc, user?.id ?? null, user?.fullName);
+        ok++;
+      }
+      toast.success(`Generated ${ok} barcodes`);
+      qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: ["barcode_duplicates"] });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setGeneratingAll(false);
+    }
+  };
+
+  const dupArray = duplicates ? [...duplicates.entries()] : [];
+
+  return (
+    <div className="space-y-5">
+      {/* Missing Products */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Package className="w-4 h-4 text-amber-500" />
+              Products Missing Barcode
+              <Badge variant="outline" className="ml-1">{missingProducts.length}</Badge>
+            </CardTitle>
+            {missingProducts.length > 0 && (
+              <Button size="sm" variant="outline" onClick={generateAllProductBarcodes} disabled={generatingAll}>
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${generatingAll ? "animate-spin" : ""}`} />
+                Generate All
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        {missingProducts.length > 0 ? (
+          <CardContent className="p-0">
+            <div className="divide-y max-h-48 overflow-y-auto">
+              {missingProducts.map(p => (
+                <div key={p.id} className="flex items-center gap-3 px-4 py-2 text-xs">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{p.productName}</p>
+                    {p.category && <p className="text-muted-foreground">{p.category}</p>}
+                  </div>
+                  <Badge variant="outline" className="text-[9px] border-amber-400 text-amber-600">Missing</Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        ) : (
+          <CardContent>
+            <p className="text-sm text-green-600 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> All products have barcodes</p>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Missing Assets */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Briefcase className="w-4 h-4 text-amber-500" />
+              Assets Missing Barcode
+              <Badge variant="outline" className="ml-1">{missingAssets.length}</Badge>
+            </CardTitle>
+            {missingAssets.length > 0 && (
+              <Button size="sm" variant="outline" onClick={generateAllAssetBarcodes} disabled={generatingAll}>
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${generatingAll ? "animate-spin" : ""}`} />
+                Generate All
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        {missingAssets.length > 0 ? (
+          <CardContent className="p-0">
+            <div className="divide-y max-h-48 overflow-y-auto">
+              {missingAssets.map(a => (
+                <div key={a.id} className="flex items-center gap-3 px-4 py-2 text-xs">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{a.assetName}</p>
+                    {a.faNumber && <p className="text-muted-foreground">FA: {a.faNumber}</p>}
+                  </div>
+                  <Badge variant="outline" className="text-[9px] border-amber-400 text-amber-600">Missing</Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        ) : (
+          <CardContent>
+            <p className="text-sm text-green-600 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> All assets have barcodes</p>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Duplicate Barcodes */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500" />
+            Duplicate Barcodes
+            <Badge variant="outline" className="ml-1">{dupArray.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        {dupArray.length > 0 ? (
+          <CardContent className="p-0">
+            <div className="divide-y max-h-64 overflow-y-auto">
+              {dupArray.map(([bc, owners]) => (
+                <div key={bc} className="px-4 py-2.5 space-y-1.5">
+                  <p className="text-xs font-mono font-semibold text-red-600">{bc}</p>
+                  {owners.map(o => (
+                    <div key={o.id} className="flex items-center gap-2 text-xs pl-2">
+                      {o.type === "product" ? <Package className="w-3 h-3 text-muted-foreground" /> : <Briefcase className="w-3 h-3 text-muted-foreground" />}
+                      <span className="text-muted-foreground capitalize">{o.type}:</span>
+                      <span className="font-medium truncate">{o.name}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        ) : (
+          <CardContent>
+            <p className="text-sm text-green-600 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> No duplicate barcodes found</p>
+          </CardContent>
+        )}
+      </Card>
     </div>
   );
 }
@@ -1213,6 +1890,12 @@ export default function BarcodesPage() {
             <TabsTrigger value="scanner" className="gap-1.5">
               <ScanLine className="w-3.5 h-3.5" /> Scanner
             </TabsTrigger>
+            <TabsTrigger value="import" className="gap-1.5">
+              <Upload className="w-3.5 h-3.5" /> Import
+            </TabsTrigger>
+            <TabsTrigger value="reports" className="gap-1.5">
+              <BarChart3 className="w-3.5 h-3.5" /> Reports
+            </TabsTrigger>
             {isAdmin && (
               <TabsTrigger value="settings" className="gap-1.5">
                 <Settings className="w-3.5 h-3.5" /> Settings
@@ -1230,6 +1913,14 @@ export default function BarcodesPage() {
 
           <TabsContent value="scanner" className="mt-4">
             <ScannerTab />
+          </TabsContent>
+
+          <TabsContent value="import" className="mt-4">
+            <ImportTab settings={settings} />
+          </TabsContent>
+
+          <TabsContent value="reports" className="mt-4">
+            <ReportsTab settings={settings} />
           </TabsContent>
 
           {isAdmin && (

@@ -115,3 +115,67 @@ export const BARCODE_FORMAT_OPTIONS: { value: BarcodeFormat; label: string; asse
 ];
 
 export const PRINT_QUANTITIES = [1, 5, 10, 20, 50, 100] as const;
+
+export interface BarcodeOwner {
+  type: "product" | "asset";
+  id: string;
+  name: string;
+}
+
+/**
+ * Check whether a barcode is already in use by another product or asset.
+ * Pass excludeId + excludeType to ignore the record being edited.
+ */
+export async function validateBarcodeUnique(
+  barcode: string,
+  excludeId?: string,
+  excludeType?: "product" | "asset",
+): Promise<BarcodeOwner | null> {
+  const bc = barcode.trim();
+  if (!bc) return null;
+
+  // Check products
+  const products = await db.products.toArray();
+  const matchProduct = products.find(
+    p => p.barcode === bc && !(excludeType === "product" && p.id === excludeId),
+  );
+  if (matchProduct) return { type: "product", id: matchProduct.id, name: matchProduct.productName };
+
+  // Check assets
+  const assets = await db.assets.toArray();
+  const matchAsset = assets.find(
+    a => a.barcode === bc && !(excludeType === "asset" && a.id === excludeId),
+  );
+  if (matchAsset) return { type: "asset", id: matchAsset.id, name: matchAsset.assetName };
+
+  return null;
+}
+
+/** Build a set of barcode → owners map to detect ALL duplicates across the system */
+export async function detectAllDuplicates(): Promise<Map<string, BarcodeOwner[]>> {
+  const [products, assets] = await Promise.all([
+    db.products.toArray(),
+    db.assets.toArray(),
+  ]);
+
+  const map = new Map<string, BarcodeOwner[]>();
+
+  for (const p of products) {
+    if (!p.barcode?.trim()) continue;
+    const key = p.barcode.trim();
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push({ type: "product", id: p.id, name: p.productName });
+  }
+  for (const a of assets) {
+    if (!a.barcode?.trim()) continue;
+    const key = a.barcode.trim();
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push({ type: "asset", id: a.id, name: a.assetName });
+  }
+
+  // Keep only entries with more than one owner (actual duplicates)
+  for (const [k, v] of map) {
+    if (v.length < 2) map.delete(k);
+  }
+  return map;
+}

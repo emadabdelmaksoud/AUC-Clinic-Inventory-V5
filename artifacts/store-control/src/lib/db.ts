@@ -150,6 +150,7 @@ export interface Asset {
   assetName: string;
   assetTypeId: string;
   assetCategoryId: string | null;
+  barcode: string | null;
   fyNumber: string | null;
   faNumber: string | null;
   ccNumber: string | null;
@@ -290,6 +291,15 @@ export class StoreControlDB extends Dexie {
     });
     this.version(6).stores({
       externalStaff: "id, name, createdAt",
+    });
+    // v7: add barcode field to assets (indexed for quick lookup)
+    this.version(7).stores({
+      assets: "id, assetTypeId, assetCategoryId, status, custodianUserId, warehouseId, sectionId, barcode, createdAt",
+    }).upgrade(async tx => {
+      // Set barcode to null for all existing assets that don't have it
+      await tx.table("assets").toCollection().modify((a: any) => {
+        if (a.barcode === undefined) a.barcode = null;
+      });
     });
   }
 }

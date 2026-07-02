@@ -68,6 +68,7 @@ export const assetSchema = z.object({
   assetName: z.string().trim().min(1, "Asset name is required").max(255),
   assetTypeId: z.string().min(1, "Asset type is required"),
   assetCategoryId: z.string().nullable().optional(),
+  barcode: z.string().trim().max(64).nullable().optional(),
   fyNumber: z.string().trim().max(100).nullable().optional(),
   faNumber: z.string().trim().max(100).nullable().optional(),
   ccNumber: z.string().trim().max(100).nullable().optional(),
@@ -213,6 +214,7 @@ function buildAssetRecord(input: AssetInput, userId: string | null, existing?: A
     assetName: input.assetName,
     assetTypeId: input.assetTypeId,
     assetCategoryId: blank(input.assetCategoryId as string | null | undefined),
+    barcode: blank(input.barcode),
     fyNumber: blank(input.fyNumber),
     faNumber: blank(input.faNumber),
     ccNumber: blank(input.ccNumber),
@@ -688,6 +690,7 @@ export async function importAssetsFromExcel(
         assetName,
         assetTypeId: typeId,
         assetCategoryId: catId,
+        barcode: null,
         fyNumber: String(row["FY Number"] ?? "").trim() || null,
         faNumber: String(row["FA Number"] ?? "").trim() || null,
         ccNumber: String(row["CC Number"] ?? "").trim() || null,
@@ -719,4 +722,34 @@ export async function importAssetsFromExcel(
   }
 
   return { imported, errors };
+}
+
+/** Lookup an asset by its barcode field */
+export async function findAssetByBarcode(barcode: string): Promise<Asset | undefined> {
+  try {
+    return await (db.assets as any).where("barcode").equals(barcode).first();
+  } catch {
+    // Fallback if index not yet available (Supabase mode)
+    const all = await db.assets.toArray();
+    return all.find(a => a.barcode === barcode);
+  }
+}
+
+/** Dedicated barcode-only update for assets */
+export async function setAssetBarcode(
+  id: string,
+  barcode: string | null,
+  userId: string | null,
+  userName?: string | null,
+): Promise<void> {
+  const normalizedBarcode = barcode?.trim() || null;
+  await db.assets.update(id, { barcode: normalizedBarcode, updatedAt: now() });
+  const asset = await db.assets.get(id);
+  await logAssetTransaction(
+    id,
+    "updated",
+    `Barcode ${normalizedBarcode ? `assigned: ${normalizedBarcode}` : "removed"}`,
+    userId,
+    userName,
+  );
 }
