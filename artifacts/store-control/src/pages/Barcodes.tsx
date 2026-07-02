@@ -24,8 +24,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import {
   QrCode, Search, Printer, Settings, ScanLine, Package,
-  Briefcase, Plus, Minus, CheckSquare, Square, RefreshCw,
-  AlertCircle, Save, ChevronRight, Keyboard,
+  Briefcase, Plus, Minus, RefreshCw,
+  AlertCircle, Save, ChevronRight, Keyboard, Camera, CameraOff,
+  Zap, ZapOff, SwitchCamera, CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Asset } from "@/lib/db";
@@ -504,13 +505,223 @@ function AssetsTab({ settings }: { settings: BarcodeSettings }) {
   );
 }
 
+// ── Camera scanner component ───────────────────────────────────────────────────
+
+type CameraState = "idle" | "requesting" | "active" | "denied" | "unavailable";
+
+interface CameraInfo { id: string; label: string; }
+
+function CameraScanner({ onDetected }: { onDetected: (code: string) => void }) {
+  const [state, setState] = useState<CameraState>("idle");
+  const [cameras, setCameras] = useState<CameraInfo[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<string>("environment");
+  const [torchOn, setTorchOn] = useState(false);
+  const [lastDetected, setLastDetected] = useState("");
+  const scannerRef = useRef<any>(null);
+  const containerIdRef = useRef(`qr-reader-${Math.random().toString(36).slice(2)}`);
+
+  const stopCamera = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) await scannerRef.current.stop();
+        scannerRef.current.clear();
+      } catch { /* ignore */ }
+      scannerRef.current = null;
+    }
+    setState("idle");
+    setTorchOn(false);
+  }, []);
+
+  const startCamera = useCallback(async (cameraId?: string) => {
+    setState("requesting");
+    try {
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+
+      // Enumerate cameras on first use
+      if (cameras.length === 0) {
+        try {
+          const devices = await Html5Qrcode.getCameras();
+          if (devices.length > 0) {
+            setCameras(devices.map(d => ({ id: d.id, label: d.label || `Camera ${d.id.slice(0, 6)}` })));
+          }
+        } catch { /* proceed without list */ }
+      }
+
+      if (scannerRef.current) {
+        try { await scannerRef.current.stop(); scannerRef.current.clear(); } catch { /* ignore */ }
+      }
+
+      const scanner = new Html5Qrcode(containerIdRef.current, {
+        verbose: false,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.UPC_A,
+        ],
+      });
+      scannerRef.current = scanner;
+
+      const cameraConstraint = cameraId && cameraId !== "environment" && cameraId !== "user"
+        ? { deviceId: { exact: cameraId } }
+        : { facingMode: cameraId ?? "environment" };
+
+      await scanner.start(
+        cameraConstraint,
+        {
+          fps: 15,
+          qrbox: (w: number, h: number) => {
+            const min = Math.min(w, h);
+            const size = Math.round(min * 0.7);
+            return { width: size, height: Math.round(size * 0.6) };
+          },
+          disableFlip: false,
+        },
+        (decodedText: string) => {
+          if (decodedText === lastDetected) return;
+          setLastDetected(decodedText);
+          onDetected(decodedText);
+          setTimeout(() => setLastDetected(""), 2000);
+        },
+        () => { /* per-frame not-found: ignore */ }
+      );
+
+      setState("active");
+    } catch (err: any) {
+      scannerRef.current = null;
+      const msg = String(err?.message ?? err ?? "");
+      if (msg.toLowerCase().includes("permission") || msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("notallowed")) {
+        setState("denied");
+      } else if (msg.toLowerCase().includes("notfound") || msg.toLowerCase().includes("no camera")) {
+        setState("unavailable");
+      } else {
+        setState("unavailable");
+        console.warn("Camera scanner error:", err);
+      }
+    }
+  }, [cameras.length, lastDetected, onDetected]);
+
+  const toggleTorch = useCallback(async () => {
+    if (!scannerRef.current?.isScanning) return;
+    try {
+      await scannerRef.current.applyVideoConstraints({ advanced: [{ torch: !torchOn }] });
+      setTorchOn(t => !t);
+    } catch { toast.error("Flash not supported on this device"); }
+  }, [torchOn]);
+
+  const switchCamera = useCallback(async () => {
+    if (cameras.length < 2) return;
+    const currentIdx = cameras.findIndex(c => c.id === selectedCamera);
+    const nextCamera = cameras[(currentIdx + 1) % cameras.length];
+    setSelectedCamera(nextCamera.id);
+    await startCamera(nextCamera.id);
+  }, [cameras, selectedCamera, startCamera]);
+
+  // Cleanup on unmount
+  useEffect(() => () => { stopCamera(); }, [stopCamera]);
+
+  return (
+    <div className="space-y-3">
+      {state === "idle" && (
+        <button
+          onClick={() => startCamera(selectedCamera)}
+          className="w-full flex flex-col items-center justify-center gap-3 h-52 rounded-xl border-2 border-dashed border-muted-foreground/30 hover:border-primary/50 hover:bg-muted/30 transition-colors cursor-pointer"
+        >
+          <div className="p-4 rounded-full bg-primary/10">
+            <Camera className="w-8 h-8 text-primary" />
+          </div>
+          <div className="text-center">
+            <p className="font-medium text-sm">Tap to open camera</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Point at any barcode or QR code</p>
+          </div>
+        </button>
+      )}
+
+      {state === "requesting" && (
+        <div className="flex flex-col items-center justify-center h-52 gap-3 rounded-xl bg-muted/30 border">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Requesting camera access…</p>
+        </div>
+      )}
+
+      {state === "denied" && (
+        <div className="flex flex-col items-center justify-center h-52 gap-3 rounded-xl bg-destructive/5 border border-destructive/20">
+          <CameraOff className="w-8 h-8 text-destructive/60" />
+          <div className="text-center px-4">
+            <p className="font-medium text-sm text-destructive">Camera permission denied</p>
+            <p className="text-xs text-muted-foreground mt-1">Allow camera access in your browser settings, then try again.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setState("idle")}>Try Again</Button>
+        </div>
+      )}
+
+      {state === "unavailable" && (
+        <div className="flex flex-col items-center justify-center h-52 gap-3 rounded-xl bg-muted/30 border">
+          <CameraOff className="w-8 h-8 text-muted-foreground" />
+          <div className="text-center px-4">
+            <p className="font-medium text-sm">No camera found</p>
+            <p className="text-xs text-muted-foreground mt-1">Use a keyboard scanner or type the barcode manually below.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setState("idle")}>Try Again</Button>
+        </div>
+      )}
+
+      {/* Live viewfinder — always rendered so html5-qrcode has its mount target */}
+      <div
+        className={state === "active" ? "relative rounded-xl overflow-hidden border" : "hidden"}
+      >
+        <div id={containerIdRef.current} className="w-full" />
+        {/* Controls overlay */}
+        <div className="absolute bottom-0 inset-x-0 flex items-center justify-between px-3 py-2 bg-gradient-to-t from-black/60 to-transparent">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-white hover:text-white hover:bg-white/20 h-8 px-2"
+            onClick={toggleTorch}
+          >
+            {torchOn ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+            <span className="text-xs ml-1">{torchOn ? "Flash Off" : "Flash"}</span>
+          </Button>
+          {cameras.length > 1 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-white hover:text-white hover:bg-white/20 h-8 px-2"
+              onClick={switchCamera}
+            >
+              <SwitchCamera className="w-4 h-4" />
+              <span className="text-xs ml-1">Flip</span>
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-white hover:text-white hover:bg-white/20 h-8 px-2"
+            onClick={stopCamera}
+          >
+            <CameraOff className="w-4 h-4" />
+            <span className="text-xs ml-1">Stop</span>
+          </Button>
+        </div>
+        {/* Detected flash */}
+        {lastDetected && (
+          <div className="absolute top-2 inset-x-2 flex items-center gap-2 bg-green-600/90 text-white rounded-lg px-3 py-2 text-sm font-medium animate-in fade-in slide-in-from-top-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span className="font-mono truncate">{lastDetected}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Scanner tab ────────────────────────────────────────────────────────────────
 
 function ScannerTab() {
   const [scanInput, setScanInput] = useState("");
   const [lastScan, setLastScan] = useState("");
   const [result, setResult] = useState<{ type: "product" | "asset" | "not_found"; data?: any } | null>(null);
-  const [scanning, setScanning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastKeyTime = useRef<number>(0);
   const bufferRef = useRef<string>("");
@@ -522,36 +733,28 @@ function ScannerTab() {
     const trimmed = code.trim();
     if (!trimmed) return;
     setLastScan(trimmed);
-    setScanning(true);
+    setScanInput("");
 
     const product = products.find(p => p.barcode === trimmed);
-    if (product) {
-      setResult({ type: "product", data: product });
-      setScanning(false);
-      return;
-    }
+    if (product) { setResult({ type: "product", data: product }); return; }
+
     const asset = assets.find(a =>
       (a as any).barcode === trimmed ||
       a.faNumber === trimmed ||
       a.serialNumber === trimmed ||
       a.ccNumber === trimmed
     );
-    if (asset) {
-      setResult({ type: "asset", data: asset });
-      setScanning(false);
-      return;
-    }
+    if (asset) { setResult({ type: "asset", data: asset }); return; }
+
     setResult({ type: "not_found" });
-    setScanning(false);
   }, [products, assets]);
 
-  // Keyboard scanner detection: fast successive keystrokes followed by Enter
+  // Keyboard scanner: rapid keystrokes (< 50 ms apart) buffered, submit on Enter
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const now = Date.now();
       const gap = now - lastKeyTime.current;
       lastKeyTime.current = now;
-
       if (e.key === "Enter") {
         const buf = bufferRef.current;
         bufferRef.current = "";
@@ -559,38 +762,40 @@ function ScannerTab() {
         return;
       }
       if (e.key.length === 1) {
-        if (gap < 50) {
-          bufferRef.current += e.key;
-        } else {
-          bufferRef.current = e.key;
-        }
+        bufferRef.current = gap < 50 ? bufferRef.current + e.key : e.key;
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [processBarcode]);
 
-  const handleManualSearch = () => {
-    if (scanInput.trim()) processBarcode(scanInput.trim());
-  };
-
-  // Focus input on tab load
-  useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 100);
-  }, []);
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
 
   return (
-    <div className="space-y-6 max-w-xl">
+    <div className="space-y-5 max-w-xl">
+      {/* Camera scanner */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
-            <Keyboard className="w-4 h-4" /> Barcode Scanner
+            <Camera className="w-4 h-4" /> Camera Scanner
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CameraScanner onDetected={processBarcode} />
+        </CardContent>
+      </Card>
+
+      {/* Keyboard / manual scanner */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Keyboard className="w-4 h-4" /> Keyboard Scanner / Manual Entry
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            USB/Bluetooth barcode scanners are auto-detected — just scan any barcode and this page will find it.
-            You can also type a barcode manually below.
+            USB/Bluetooth scanners are auto-detected — just scan while this page is open.
+            You can also type a barcode manually.
           </p>
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -598,21 +803,24 @@ function ScannerTab() {
               <Input
                 ref={inputRef}
                 className="pl-9 font-mono"
-                placeholder="Scan or type barcode..."
+                placeholder="Scan or type barcode…"
                 value={scanInput}
                 onChange={e => setScanInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleManualSearch()}
+                onKeyDown={e => e.key === "Enter" && processBarcode(scanInput)}
                 data-testid="scanner-input"
               />
             </div>
-            <Button onClick={handleManualSearch} disabled={!scanInput.trim()}>Search</Button>
+            <Button onClick={() => processBarcode(scanInput)} disabled={!scanInput.trim()}>Search</Button>
           </div>
           {lastScan && (
-            <p className="text-xs text-muted-foreground">Last scan: <span className="font-mono font-medium text-foreground">{lastScan}</span></p>
+            <p className="text-xs text-muted-foreground">
+              Last scan: <span className="font-mono font-medium text-foreground">{lastScan}</span>
+            </p>
           )}
         </CardContent>
       </Card>
 
+      {/* Result */}
       {result && (
         <Card>
           <CardContent className="pt-4">
